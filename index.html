@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Blog</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet">
+  <!-- Quill 2.0 -->
+  <link href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
+  <!-- Supabase -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- NAVBAR -->
+  <header id="navbar">
+    <div class="nav-inner">
+      <a class="site-title" href="#">
+        <img src="./Monad.png" height="32px">
+      </a>
+      <div class="nav-right">
+        <div class="search-wrap">
+          <input id="search-input" type="search" placeholder="Search posts…" autocomplete="off">
+          <button id="search-clear" class="icon-btn" title="Clear">&#10005;</button>
+        </div>
+        <button id="admin-btn" class="icon-btn subtle-btn" title="Admin">&#9679;</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ADMIN PASSWORD MODAL -->
+  <div id="auth-modal" class="modal-overlay hidden">
+    <div class="modal-box">
+      <h3>Admin Access</h3>
+      <input id="admin-pass" type="password" placeholder="Password" autocomplete="off">
+      <div class="modal-actions">
+        <button id="auth-cancel" class="btn-ghost">Cancel</button>
+        <button id="auth-confirm" class="btn-primary">Enter</button>
+      </div>
+      <p id="auth-error" class="error-msg hidden">Incorrect password.</p>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <main id="main-wrap">
+
+    <!-- EDITOR (admin only, hidden by default) -->
+    <section id="editor-section" class="hidden">
+      <div id="editor-card">
+        <div id="quill-editor"></div>
+        <div id="tag-area">
+          <div id="tag-list"></div>
+          <input id="tag-input" type="text" placeholder="Add a tag, press Enter…">
+        </div>
+        <div id="editor-actions">
+          <button id="publish-btn" class="btn-primary">Publish</button>
+          <button id="logout-btn" class="btn-ghost">Exit admin</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- POSTS FEED -->
+    <section id="posts-section">
+      <div id="posts-loading" class="hidden">
+        <div class="spinner"></div>
+      </div>
+      <div id="posts-feed"></div>
+      <div id="load-more-wrap">
+        <button id="load-more-btn" class="btn-ghost hidden">Load more</button>
+      </div>
+      <div id="no-results" class="hidden">No posts found.</div>
+    </section>
+
+    <!-- SUBSCRIBE -->
+    <section id="subscribe-section">
+      <div id="subscribe-card">
+        <p class="sub-label">Stay in the loop</p>
+        <h2>Get new posts by email.</h2>
+        <form id="mc-form" action="https://YOUR_MAILCHIMP_FORM_ACTION_URL" method="post" target="_blank" novalidate>
+          <div class="mc-field-group">
+            <input type="email" name="EMAIL" id="mc-email" placeholder="your@email.com" required>
+          </div>
+          <!-- Mailchimp anti-bot field — do not remove -->
+          <div style="position:absolute;left:-5000px;" aria-hidden="true">
+            <input type="text" name="b_XXXX_XXXX" tabindex="-1" value="">
+          </div>
+          <button type="submit" class="btn-primary">Subscribe</button>
+        </form>
+        <p class="sub-note">No spam. Unsubscribe anytime.</p>
+      </div>
+    </section>
+
+  </main>
+
+  <footer id="site-footer">
+    <span>Blog &mdash; powered by curiosity</span>
+  </footer>
+
+  <script src="site.js"></script>
+</body>
+</html>
