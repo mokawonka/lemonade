@@ -522,13 +522,13 @@ img {
   font-weight: 400;
 }
 
-#mc-form {
+#subscribe-form {
   display: flex;
   gap: .6rem;
   flex-wrap: wrap;
 }
 
-#mc-email {
+#sub-email {
   flex: 1;
   min-width: 200px;
   border: 1px solid var(--border2);
@@ -542,7 +542,7 @@ img {
   transition: box-shadow var(--transition);
 }
 
-#mc-email:focus {
+#sub-email:focus {
   box-shadow: 0 0 0 2px #1a1a1a22;
   border-color: var(--text);
 }
@@ -642,8 +642,8 @@ img {
    ============================================= */
 @media (max-width: 600px) {
   #search-input { width: 110px; }
-  #mc-form { flex-direction: column; }
-  #mc-email { min-width: unset; }
+  #subscribe-form { flex-direction: column; }
+  #sub-email { min-width: unset; }
   .modal-box { padding: 1.25rem 1.25rem; }
 }
 
