@@ -272,6 +272,12 @@ publishBtn.addEventListener('click', async () => {
 
     if (error) throw error;
 
+    // Notify subscribers after successful publish
+    const postTitle = quill.getText().trim().split('\n')[0].slice(0, 80) || 'New post';
+    const postContent = quill.root.innerHTML;
+    await notifySubscribers(postTitle, postContent);
+
+
     quill.setText('');
     currentTags = [];
     renderTagPills();
@@ -500,6 +506,50 @@ function walkTextNodes(node, query) {
   }
 }
 
+// ---- SUBSCRIBE ----
+document.getElementById('subscribe-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const email = document.getElementById('sub-email').value.trim();
+  const msg   = document.getElementById('sub-msg');
+  const btn   = e.target.querySelector('button[type="submit"]');
+
+  btn.disabled = true;
+  msg.textContent = 'Subscribing…';
+
+  const { error } = await db         
+    .from('subscribers')
+    .insert([{ email }]);
+
+  if (error) {
+    msg.textContent = error.code === '23505'
+      ? 'You\'re already subscribed!'
+      : 'Something went wrong. Try again.';
+  } else {
+    msg.textContent = '✓ You\'re subscribed!';
+    document.getElementById('sub-email').value = '';
+  }
+
+  btn.disabled = false;
+});
+
+// ---- NOTIFY ON PUBLISH ----
+async function notifySubscribers(postTitle, postContent) {
+  try {
+    const res = await fetch('https://sdltggiedqstrsnvvjmj.supabase.co/functions/v1/notify-subscribers', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify({ postTitle, postContent }),
+    });
+    const text = await res.text();
+    console.log('Response status:', res.status);
+    console.log('Response body:', text);
+  } catch (err) {
+    console.error('Failed to notify subscribers:', err);
+  }
+}
 /* =============================================
    INIT
    ============================================= */

@@ -19,7 +19,7 @@
   <!-- NAVBAR -->
   <header id="navbar">
     <div class="nav-inner">
-      <a class="site-title" href="#">
+      <a class="site-title" href="https://mokawonka.github.io/lemonade">
         <img src="./Monad.png" height="32px">
       </a>
       <div class="nav-right">
@@ -80,17 +80,13 @@
       <div id="subscribe-card">
         <p class="sub-label">Stay in the loop</p>
         <h2>Get new posts by email.</h2>
-        <form id="mc-form" action="https://YOUR_MAILCHIMP_FORM_ACTION_URL" method="post" target="_blank" novalidate>
+        <form id="subscribe-form">
           <div class="mc-field-group">
-            <input type="email" name="EMAIL" id="mc-email" placeholder="your@email.com" required>
-          </div>
-          <!-- Mailchimp anti-bot field — do not remove -->
-          <div style="position:absolute;left:-5000px;" aria-hidden="true">
-            <input type="text" name="b_XXXX_XXXX" tabindex="-1" value="">
+            <input type="email" id="sub-email" placeholder="your@email.com" required>
           </div>
           <button type="submit" class="btn-primary">Subscribe</button>
         </form>
-        <p class="sub-note">No spam. Unsubscribe anytime.</p>
+        <p id="sub-msg" class="sub-note">No spam. Unsubscribe anytime.</p>
       </div>
     </section>
 
