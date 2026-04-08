@@ -506,6 +506,19 @@ img {
 }
 .btn-delete:hover { border-color: #cc3333; color: #cc3333; }
 
+.btn-edit {
+  background: none;
+  border: 1px solid #e0e0e0;
+  border-radius: 20px;
+  padding: .2rem .8rem;
+  font-size: .75rem;
+  color: #aaa;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  transition: all var(--transition);
+}
+.btn-edit:hover { border-color: #3366cc; color: #3366cc; }
+
 /* FILTER BADGE (active tag filter bar) */
 #filter-bar {
   display: flex;

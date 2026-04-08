@@ -348,23 +348,39 @@ publishBtn.addEventListener('click', async () => {
     return;
   }
 
-  publishBtn.disabled     = true;
-  publishBtn.textContent  = 'Publishing…';
+  const editId = publishBtn.dataset.editId;
+  publishBtn.disabled = true;
+  publishBtn.textContent = editId ? 'Saving…' : 'Publishing…';
 
   try {
-    const { error } = await db.from('posts').insert([{
-      content,
-      tags: currentTags,
-      created_at: new Date().toISOString()
-    }]).select().single();
+    if (editId) {
+      // UPDATE existing post
+  console.log('Editing post ID:', editId);
+  console.log('Content length:', content.length);
+  console.log('Tags:', currentTags);
 
-    if (error) throw error;
+  const { data, error } = await db.from('posts').update({
+    content,
+    tags: currentTags,
+  }).eq('id', editId).select();
 
-    // Notify subscribers after successful publish
-    const postTitle = quill.getText().trim().split('\n')[0].slice(0, 80) || 'New post';
-    const postContent = quill.root.innerHTML;
-    await notifySubscribers(postTitle, postContent);
+  console.log('Update result - data:', data);
+  console.log('Update result - error:', error);
 
+  if (error) throw error;
+  delete publishBtn.dataset.editId;
+    } else {
+      // INSERT new post
+      const { error } = await db.from('posts').insert([{
+        content,
+        tags: currentTags,
+        created_at: new Date().toISOString()
+      }]).select().single();
+      if (error) throw error;
+
+      const postTitle = quill.getText().trim().split('\n')[0].slice(0, 80) || 'New post';
+      await notifySubscribers(postTitle, quill.root.innerHTML);
+    }
 
     quill.setText('');
     currentTags = [];
@@ -373,9 +389,9 @@ publishBtn.addEventListener('click', async () => {
 
   } catch (err) {
     console.error('Publish error:', err);
-    alert('Failed to publish.\n' + err.message);
+    alert('Failed to save.\n' + err.message);
   } finally {
-    publishBtn.disabled    = false;
+    publishBtn.disabled = false;
     publishBtn.textContent = 'Publish';
   }
 });
@@ -522,8 +538,11 @@ function buildPostCard(post) {
   if (searchQuery) bodyHtml = highlightText(bodyHtml, searchQuery);
 
   const adminBar = isAdmin
-    ? `<div class="post-admin-bar"><button class="btn-delete" data-id="${post.id}">Delete post</button></div>`
-    : '';
+  ? `<div class="post-admin-bar">
+       <button class="btn-edit" data-id="${post.id}">Edit post</button>
+       <button class="btn-delete" data-id="${post.id}">Delete post</button>
+     </div>`
+  : '';
 
   card.innerHTML = metaHtml + `<div class="post-body">${bodyHtml}</div>` + adminBar;
 
@@ -535,6 +554,8 @@ function buildPostCard(post) {
   });
 
   card.querySelector('.btn-delete')?.addEventListener('click', () => deletePost(post.id));
+  card.querySelector('.btn-edit')?.addEventListener('click', () => editPost(post));
+
 
   return card;
 }
@@ -551,6 +572,26 @@ async function deletePost(id) {
   } catch (err) {
     alert('Delete failed: ' + err.message);
   }
+}
+
+/* =============================================
+   EDIT POST
+   ============================================= */
+async function editPost(post) {
+  // Scroll to editor and populate it
+  editorSection.classList.remove('hidden');
+  editorSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  // Load content into Quill
+  quill.root.innerHTML = post.content || '';
+
+  // Load tags
+  currentTags = Array.isArray(post.tags) ? [...post.tags] : [];
+  renderTagPills();
+
+  // Swap Publish button to Save
+  publishBtn.textContent = 'Save changes';
+  publishBtn.dataset.editId = post.id;
 }
 
 /* =============================================
