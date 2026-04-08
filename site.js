@@ -48,16 +48,104 @@ const quill = new Quill('#quill-editor', {
   theme: 'snow',
   placeholder: "What's on your mind…",
   modules: {
-    toolbar: [
-      [{ header: [2, 3, false] }],
-      ['bold', 'italic', 'underline', 'strike'],
-      ['blockquote', 'code-block'],
-      [{ list: 'ordered' }, { list: 'bullet' }],
-      ['link', 'image', 'video'],
-      ['clean']
-    ]
+    toolbar: {
+      container: [
+        [{ header: [2, 3, false] }],
+        ['bold', 'italic', 'underline', 'strike'],
+        ['blockquote', 'code-block'],
+        [{ list: 'ordered' }, { list: 'bullet' }],
+        ['link', 'image', 'video'],
+        ['clean']
+      ],
+      handlers: {
+        image: imageHandler 
+      }
+    }
   }
 });
+
+async function compressImageToBlob(file) {
+  const img = new Image();
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+
+  return new Promise(resolve => {
+    img.onload = () => {
+      const MAX_WIDTH = 900;
+
+      let width = img.width;
+      let height = img.height;
+
+      if (width > MAX_WIDTH) {
+        height *= MAX_WIDTH / width;
+        width = MAX_WIDTH;
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+
+      ctx.drawImage(img, 0, 0, width, height);
+
+      URL.revokeObjectURL(img.src);
+
+      canvas.toBlob(
+        blob => resolve(blob),
+        'image/webp',
+        0.7
+      );
+    };
+
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+async function uploadImageToSupabase(blob) {
+  const fileName = `post-${Date.now()}-${Math.random().toString(36).slice(2)}.webp`;
+
+  const { error } = await db.storage
+    .from('posts')
+    .upload(fileName, blob, {
+      contentType: 'image/webp'
+    });
+
+  if (error) throw error;
+
+  return `${SUPABASE_URL}/storage/v1/object/public/posts/${fileName}`;
+}
+
+async function imageHandler() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.click();
+
+  input.onchange = async () => {
+    const file = input.files[0];
+    if (!file) return;
+
+    try {
+      // Optional: temporary placeholder (UX boost)
+      const range = quill.getSelection();
+      quill.insertText(range.index, 'Uploading image...\n');
+
+      // 1. Compress → Blob
+      const blob = await compressImageToBlob(file);
+
+      // 2. Upload → Supabase
+      const publicUrl = await uploadImageToSupabase(blob);
+
+      // 3. Replace placeholder with image
+      const currentRange = quill.getSelection();
+      quill.deleteText(currentRange.index - 1, 1); // remove "Uploading..."
+
+      quill.insertEmbed(currentRange.index, 'image', publicUrl);
+
+    } catch (err) {
+      console.error('Image upload failed:', err);
+      alert('Image upload failed');
+    }
+  };
+}
 
 /* Auto-embed YouTube links pasted into editor */
 quill.clipboard.addMatcher(Node.TEXT_NODE, (node, delta) => {
@@ -395,6 +483,22 @@ function reRenderCurrentPosts() {
 /* =============================================
    BUILD POST CARD
    ============================================= */
+function optimizeImages(html) {
+  const div = document.createElement('div');
+  div.innerHTML = html;
+
+  div.querySelectorAll('img').forEach(img => {
+    img.loading = 'lazy';
+    img.decoding = 'async';
+    img.style.maxWidth = '100%';
+
+    img.style.borderRadius = '8px';
+    img.style.margin = '10px 0';
+  });
+
+  return div.innerHTML;
+}
+
 function buildPostCard(post) {
   const card = document.createElement('article');
   card.className  = 'post-card';
@@ -414,6 +518,7 @@ function buildPostCard(post) {
   metaHtml += `</div>`;
 
   let bodyHtml = post.content || '';
+  bodyHtml = optimizeImages(bodyHtml);
   if (searchQuery) bodyHtml = highlightText(bodyHtml, searchQuery);
 
   const adminBar = isAdmin

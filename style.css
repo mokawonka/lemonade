@@ -436,6 +436,56 @@ img {
   margin-bottom: .6em;
 }
 
+/* Code blocks */
+.post-body pre {
+  background: #f4f4f4;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.25rem;
+  overflow-x: auto;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  margin: .75em 0;
+  white-space: pre;
+}
+
+.post-body pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: 'Fira Code', 'Courier New', Courier, monospace;
+  color: #1a1a1a;
+}
+
+/* Inline code */
+.post-body code {
+  background: #f4f4f4;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: .1em .4em;
+  font-size: 0.85em;
+  font-family: 'Fira Code', 'Courier New', Courier, monospace;
+  color: #1a1a1a;
+}
+
+.post-body .ql-code-block-container {
+  background: #f4f4f4;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.25rem;
+  overflow-x: auto;
+  margin: .75em 0;
+}
+
+.post-body .ql-code-block {
+  font-family: 'Fira Code', 'Courier New', Courier, monospace;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  white-space: pre;
+  color: #1a1a1a;
+  background: none;
+}
+
 /* Admin delete button */
 .post-admin-bar {
   margin-top: .75rem;
