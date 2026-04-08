@@ -355,20 +355,12 @@ publishBtn.addEventListener('click', async () => {
   try {
     if (editId) {
       // UPDATE existing post
-  console.log('Editing post ID:', editId);
-  console.log('Content length:', content.length);
-  console.log('Tags:', currentTags);
-
-  const { data, error } = await db.from('posts').update({
-    content,
-    tags: currentTags,
-  }).eq('id', editId).select();
-
-  console.log('Update result - data:', data);
-  console.log('Update result - error:', error);
-
-  if (error) throw error;
-  delete publishBtn.dataset.editId;
+      const { error } = await db.from('posts').update({
+        content,
+        tags: currentTags,
+      }).eq('id', editId);
+      if (error) throw error;
+      delete publishBtn.dataset.editId;
     } else {
       // INSERT new post
       const { error } = await db.from('posts').insert([{
