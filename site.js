@@ -4,6 +4,7 @@
 const SUPABASE_URL      = 'https://sdltggiedqstrsnvvjmj.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNkbHRnZ2llZHFzdHJzbnZ2am1qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU1NjM0NDAsImV4cCI6MjA5MTEzOTQ0MH0.20Z2gkI2V50BOXdVwFuvm4SjPVVgP9QGdjNH7BLqCkI';
 const PAGE_SIZE = 8;
+const AI_COMMENT_DELAY_MS = 0.1 * 60 * 1000; // 5 minutes
 
 /* =============================================
    SUPABASE CLIENT
@@ -20,6 +21,19 @@ let hasMorePosts  = true;
 let currentTags   = [];
 let activeTagFilter = null;
 let searchQuery   = '';
+let personalities = [];
+
+/* =============================================
+   LOAD PERSONALITIES
+   ============================================= */
+async function loadPersonalities() {
+  try {
+    personalities = JSON.parse(document.getElementById('personalities-data').textContent);
+  } catch (err) {
+    console.error('Could not parse personalities:', err);
+    personalities = [];
+  }
+}
 
 /* =============================================
    DOM REFS
@@ -58,7 +72,7 @@ const quill = new Quill('#quill-editor', {
         ['clean']
       ],
       handlers: {
-        image: imageHandler 
+        image: imageHandler
       }
     }
   }
@@ -72,44 +86,26 @@ async function compressImageToBlob(file) {
   return new Promise(resolve => {
     img.onload = () => {
       const MAX_WIDTH = 900;
-
       let width = img.width;
       let height = img.height;
-
       if (width > MAX_WIDTH) {
         height *= MAX_WIDTH / width;
         width = MAX_WIDTH;
       }
-
       canvas.width = width;
       canvas.height = height;
-
       ctx.drawImage(img, 0, 0, width, height);
-
       URL.revokeObjectURL(img.src);
-
-      canvas.toBlob(
-        blob => resolve(blob),
-        'image/webp',
-        0.7
-      );
+      canvas.toBlob(blob => resolve(blob), 'image/webp', 0.7);
     };
-
     img.src = URL.createObjectURL(file);
   });
 }
 
 async function uploadImageToSupabase(blob) {
   const fileName = `post-${Date.now()}-${Math.random().toString(36).slice(2)}.webp`;
-
-  const { error } = await db.storage
-    .from('posts')
-    .upload(fileName, blob, {
-      contentType: 'image/webp'
-    });
-
+  const { error } = await db.storage.from('posts').upload(fileName, blob, { contentType: 'image/webp' });
   if (error) throw error;
-
   return `${SUPABASE_URL}/storage/v1/object/public/posts/${fileName}`;
 }
 
@@ -118,28 +114,17 @@ async function imageHandler() {
   input.type = 'file';
   input.accept = 'image/*';
   input.click();
-
   input.onchange = async () => {
     const file = input.files[0];
     if (!file) return;
-
     try {
-      // Optional: temporary placeholder (UX boost)
       const range = quill.getSelection();
       quill.insertText(range.index, 'Uploading image...\n');
-
-      // 1. Compress → Blob
       const blob = await compressImageToBlob(file);
-
-      // 2. Upload → Supabase
       const publicUrl = await uploadImageToSupabase(blob);
-
-      // 3. Replace placeholder with image
       const currentRange = quill.getSelection();
-      quill.deleteText(currentRange.index - 1, 1); // remove "Uploading..."
-
+      quill.deleteText(currentRange.index - 1, 1);
       quill.insertEmbed(currentRange.index, 'image', publicUrl);
-
     } catch (err) {
       console.error('Image upload failed:', err);
       alert('Image upload failed');
@@ -147,19 +132,16 @@ async function imageHandler() {
   };
 }
 
-/* Auto-embed YouTube links pasted into editor */
 quill.clipboard.addMatcher(Node.TEXT_NODE, (node, delta) => {
   const ytRegex = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{11})/g;
   const text = node.data;
   let match, lastIndex = 0;
   const ops = [];
-
   while ((match = ytRegex.exec(text)) !== null) {
     if (match.index > lastIndex) ops.push({ insert: text.slice(lastIndex, match.index) });
     ops.push({ insert: { video: `https://www.youtube.com/embed/${match[1]}` } });
     lastIndex = match.index + match[0].length;
   }
-
   if (lastIndex < text.length) ops.push({ insert: text.slice(lastIndex) });
   if (ops.length > 0) {
     const newDelta = new quill.constructor.imports['delta']();
@@ -171,8 +153,6 @@ quill.clipboard.addMatcher(Node.TEXT_NODE, (node, delta) => {
 
 /* =============================================
    AUTH MODAL
-   Inject an email field above the existing
-   password field — no HTML changes needed.
    ============================================= */
 const emailField = document.createElement('input');
 emailField.id    = 'admin-email';
@@ -189,7 +169,6 @@ emailField.addEventListener('focus', () => emailField.style.boxShadow = '0 0 0 2
 emailField.addEventListener('blur',  () => emailField.style.boxShadow = '');
 adminPassInput.parentNode.insertBefore(emailField, adminPassInput);
 
-/* Open modal */
 adminBtn.addEventListener('click', () => {
   if (isAdmin) { logoutAdmin(); return; }
   emailField.value      = '';
@@ -219,21 +198,17 @@ function closeAuthModal() {
 async function attemptLogin() {
   const email    = emailField.value.trim();
   const password = adminPassInput.value;
-
   if (!email || !password) {
     authError.textContent = 'Please enter your email and password.';
     authError.classList.remove('hidden');
     return;
   }
-
-  authConfirm.disabled     = true;
-  authConfirm.textContent  = 'Signing in…';
+  authConfirm.disabled    = true;
+  authConfirm.textContent = 'Signing in…';
   authError.classList.add('hidden');
-
   try {
     const { error } = await db.auth.signInWithPassword({ email, password });
     if (error) throw error;
-    // onAuthStateChange handles the rest
     closeAuthModal();
   } catch {
     authError.textContent = 'Incorrect email or password.';
@@ -248,28 +223,17 @@ async function attemptLogin() {
 
 async function logoutAdmin() {
   await db.auth.signOut();
-  // onAuthStateChange handles the rest
 }
 
 logoutBtn.addEventListener('click', logoutAdmin);
 
-/* =============================================
-   SESSION LISTENER
-   Single source of truth for admin state.
-   Fires on page load (restores session from
-   localStorage automatically) and on any
-   sign-in / sign-out event.
-   ============================================= */
 db.auth.onAuthStateChange((_event, session) => {
   const wasAdmin = isAdmin;
   isAdmin = !!session;
-
   editorSection.classList.toggle('hidden', !isAdmin);
   adminBtn.title        = isAdmin ? 'Exit admin' : 'Admin';
   adminBtn.style.color  = isAdmin ? '#111' : '';
   adminBtn.style.opacity = isAdmin ? '1' : '';
-
-  // Only re-render cards if the admin state actually changed
   if (wasAdmin !== isAdmin) reRenderCurrentPosts();
 });
 
@@ -309,26 +273,18 @@ function renderTagPills() {
   });
 }
 
-// function cleanYouTubeEmbeds(html) {
-//   return html.replace(
-//     /https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{11})/g,
-//     (_, __, ___, id) =>
-//       `<iframe src="https://www.youtube.com/embed/${id}" frameborder="0" allowfullscreen style="width:100%;height:400px;"></iframe>`
-//   );
-// }
-
 function cleanYouTubeEmbeds(html) {
   return html.replace(
     /https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{11})/g,
     (_, __, ___, id) => {
-      return `<iframe 
-        width="100%" 
-        height="400" 
-        src="https://www.youtube.com/embed/${id}" 
+      return `<iframe
+        width="100%"
+        height="400"
+        src="https://www.youtube.com/embed/${id}"
         title="YouTube video player"
-        frameborder="0" 
-        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
-        referrerpolicy="strict-origin-when-cross-origin" 
+        frameborder="0"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+        referrerpolicy="strict-origin-when-cross-origin"
         allowfullscreen
         style="width:100%; height:400px; max-width:100%; border-radius:8px;">
       </iframe>`;
@@ -354,7 +310,6 @@ publishBtn.addEventListener('click', async () => {
 
   try {
     if (editId) {
-      // UPDATE existing post
       const { error } = await db.from('posts').update({
         content,
         tags: currentTags,
@@ -362,8 +317,7 @@ publishBtn.addEventListener('click', async () => {
       if (error) throw error;
       delete publishBtn.dataset.editId;
     } else {
-      // INSERT new post
-      const { error } = await db.from('posts').insert([{
+      const { data: insertedPost, error } = await db.from('posts').insert([{
         content,
         tags: currentTags,
         created_at: new Date().toISOString()
@@ -372,6 +326,9 @@ publishBtn.addEventListener('click', async () => {
 
       const postTitle = quill.getText().trim().split('\n')[0].slice(0, 80) || 'New post';
       await notifySubscribers(postTitle, quill.root.innerHTML);
+
+      // Schedule AI comments after 5 minutes
+      scheduleAIComments(insertedPost.id, content);
     }
 
     quill.setText('');
@@ -389,6 +346,229 @@ publishBtn.addEventListener('click', async () => {
 });
 
 /* =============================================
+   AI COMMENTS
+   ============================================= */
+
+/**
+ * Detect the language of a post's text content.
+ * Returns 'fr' for French, 'en' for everything else.
+ */
+function detectLanguage(text) {
+  const frenchWords = /\b(le|la|les|un|une|des|est|sont|dans|pour|avec|sur|pas|que|qui|mais|ou|donc|car|ni|or|je|tu|il|elle|nous|vous|ils|elles|être|avoir|faire|plus|très|bien|aussi|comme|tout|même|encore|après|avant|sans|entre|depuis|pendant|voilà|c'est|j'ai|c'était|il y a)\b/gi;
+  const matches = (text.match(frenchWords) || []).length;
+  return matches >= 4 ? 'fr' : 'en';
+}
+
+/**
+ * Strip HTML tags from content so the AI reads plain text.
+ */
+function stripHtml(html) {
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  return div.textContent || div.innerText || '';
+}
+
+/**
+ * Call Gemini 2.0 Flash (free tier) for a comment.
+ */
+async function generateAIComment(persona, postText, imageUrls = []) {
+  const res = await fetch(
+    'https://sdltggiedqstrsnvvjmj.supabase.co/functions/v1/ai-comment',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify({ postText, persona, imageUrls }),
+    }
+  );
+  const data = await res.json();
+  return data.comment || '';
+}
+
+/**
+ * Save a comment to Supabase.
+ */
+async function saveComment(postId, persona, content) {
+  const { error } = await db.from('comments').insert([{
+    post_id: postId,
+    persona_name: persona.name,
+    persona_color: persona.color,
+    content,
+    created_at: new Date().toISOString()
+  }]);
+  if (error) throw error;
+}
+
+/**
+ * Schedule AI comments to fire after publish.
+ * Each persona comments in sequence with a small stagger.
+ */
+function extractImagesFromHtml(html) {
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  return [...div.querySelectorAll('img')]
+    .map(img => img.src)
+    .filter(src => src && src.startsWith('http'));
+}
+
+function scheduleAIComments(postId, postHtml) {
+  if (!personalities.length) return;
+
+  setTimeout(async () => {
+    const postText = stripHtml(postHtml);
+    const imageUrls = extractImagesFromHtml(postHtml);
+
+    for (const persona of personalities) {
+      try {
+        const commentText = await generateAIComment(persona, postText, imageUrls);
+        if (!commentText) continue;
+
+        const { data, error } = await db.from('comments').insert([{
+          post_id: postId,
+          persona_name: persona.name,
+          persona_color: persona.color,
+          content: commentText,
+          created_at: new Date().toISOString()
+        }]).select();
+
+        if (error) throw error;
+        appendCommentToCard(postId, {
+          persona_name: persona.name,
+          persona_color: persona.color,
+          content: commentText,
+          created_at: new Date().toISOString()
+        });
+
+      } catch (err) {
+        console.error(`[AI] Failed for ${persona.name}:`, err);
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 15000));
+    }
+  }, AI_COMMENT_DELAY_MS);
+}
+
+/**
+ * Append a freshly generated comment directly to the visible card
+ * without a full re-render (so we don't lose scroll position).
+ */
+function appendCommentToCard(postId, comment) {
+  // Re-query every time in case DOM was rebuilt
+  const card = document.querySelector(`#posts-feed [data-id="${postId}"]`);
+  if (!card) {
+    console.warn(`[AI] Card ${postId} not found in DOM, comment won't appear without refresh`);
+    return;
+  }
+
+  let section = card.querySelector('.comments-section');
+  let toggle = card.querySelector('.comments-toggle');
+
+  if (!section) {
+    const wrapper = document.createElement('div');
+
+    toggle = document.createElement('button');
+    toggle.className = 'comments-toggle open';
+    toggle.innerHTML = `
+      <span class="comments-toggle-label">Programs comments</span>
+      <span class="comments-toggle-count">(0)</span>
+      <span class="comments-toggle-arrow">▼</span>
+    `;
+
+    section = document.createElement('div');
+    section.className = 'comments-section open';
+
+    toggle.addEventListener('click', () => {
+      const isOpen = section.classList.toggle('open');
+      toggle.classList.toggle('open', isOpen);
+    });
+
+    wrapper.appendChild(toggle);
+    wrapper.appendChild(section);
+    card.appendChild(wrapper);
+  }
+
+  // Update count
+  const countEl = card.querySelector('.comments-toggle-count');
+  if (countEl) {
+    const current = parseInt(countEl.textContent.replace(/\D/g, '')) || 0;
+    countEl.textContent = `(${current + 1})`;
+  }
+
+  // Open the section so the new comment is visible
+  section.classList.add('open');
+  if (toggle) toggle.classList.add('open');
+
+  section.appendChild(buildCommentEl(comment));
+
+  // Smooth scroll to the new comment
+  section.lastElementChild.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+/* =============================================
+   FETCH & RENDER COMMENTS
+   ============================================= */
+async function fetchComments(postId) {
+  const { data, error } = await db
+    .from('comments')
+    .select('*')
+    .eq('post_id', postId)
+    .order('created_at', { ascending: true });
+  if (error) { console.error('fetchComments error:', error); return []; }
+  return data || [];
+}
+
+function buildCommentEl(comment) {
+  const el = document.createElement('div');
+  el.className = 'ai-comment';
+  el.style.setProperty('--comment-color', comment.persona_color);
+
+  const dateStr = new Date(comment.created_at).toLocaleDateString('en-US', {
+    year: 'numeric', month: 'long', day: 'numeric'
+  });
+
+  el.innerHTML = `
+    <div class="ai-comment-header">
+      <span class="ai-comment-name" style="color:${escapeHtml(comment.persona_color)}">${escapeHtml(comment.persona_name)}</span>
+      <span class="ai-comment-date">${dateStr}</span>
+    </div>
+    <div class="ai-comment-body">${escapeHtml(comment.content)}</div>
+  `;
+  return el;
+}
+
+async function buildCommentsSection(postId) {
+  const comments = await fetchComments(postId);
+  if (!comments.length) return null;
+
+  const wrapper = document.createElement('div');
+
+  // Toggle button
+  const toggle = document.createElement('button');
+  toggle.className = 'comments-toggle';
+  toggle.innerHTML = `
+    <span class="comments-toggle-label">Programs comments</span>
+    <span class="comments-toggle-count">(${comments.length})</span>
+    <span class="comments-toggle-arrow">▼</span>
+  `;
+
+  // Section
+  const section = document.createElement('div');
+  section.className = 'comments-section';
+  comments.forEach(c => section.appendChild(buildCommentEl(c)));
+
+  toggle.addEventListener('click', () => {
+    const isOpen = section.classList.toggle('open');
+    toggle.classList.toggle('open', isOpen);
+  });
+
+  wrapper.appendChild(toggle);
+  wrapper.appendChild(section);
+  return wrapper;
+}
+
+/* =============================================
    FETCH POSTS
    ============================================= */
 async function fetchPosts(offset, limit = PAGE_SIZE) {
@@ -397,10 +577,7 @@ async function fetchPosts(offset, limit = PAGE_SIZE) {
     .select('*')
     .order('created_at', { ascending: false });
 
-  if (activeTagFilter) {
-    query = query.contains('tags', [activeTagFilter]);
-  }
-
+  if (activeTagFilter) query = query.contains('tags', [activeTagFilter]);
   if (searchQuery) {
     const escaped = searchQuery.replace(/[%_]/g, '\\$&');
     query = query.filter('content', 'ilike', `%${escaped}%`);
@@ -466,7 +643,13 @@ async function loadNextPage(isInitial = false) {
     }
 
     loadedPosts.push(...newPosts);
-    newPosts.forEach(post => postsFeed.appendChild(buildPostCard(post)));
+
+    for (const post of newPosts) {
+      const card = buildPostCard(post);
+      const commentsSection = await buildCommentsSection(post.id);
+      if (commentsSection) card.appendChild(commentsSection);
+      postsFeed.appendChild(card);
+    }
 
     hasMorePosts = newPosts.length === PAGE_SIZE;
     loadMoreBtn.classList.toggle('hidden', !hasMorePosts);
@@ -480,11 +663,16 @@ async function loadNextPage(isInitial = false) {
 }
 
 /* =============================================
-   RE-RENDER (used when toggling admin mode)
+   RE-RENDER
    ============================================= */
-function reRenderCurrentPosts() {
+async function reRenderCurrentPosts() {
   postsFeed.innerHTML = '';
-  loadedPosts.forEach(post => postsFeed.appendChild(buildPostCard(post)));
+  for (const post of loadedPosts) {
+    const card = buildPostCard(post);
+    const commentsSection = await buildCommentsSection(post.id);
+    if (commentsSection) card.appendChild(commentsSection);
+    postsFeed.appendChild(card);
+  }
   loadMoreBtn.classList.toggle('hidden', !hasMorePosts);
 }
 
@@ -494,16 +682,13 @@ function reRenderCurrentPosts() {
 function optimizeImages(html) {
   const div = document.createElement('div');
   div.innerHTML = html;
-
   div.querySelectorAll('img').forEach(img => {
     img.loading = 'lazy';
     img.decoding = 'async';
     img.style.maxWidth = '100%';
-
     img.style.borderRadius = '8px';
     img.style.margin = '10px 0';
   });
-
   return div.innerHTML;
 }
 
@@ -517,7 +702,6 @@ function buildPostCard(post) {
   });
 
   const tags = Array.isArray(post.tags) ? post.tags : [];
-
   let metaHtml = `<div class="post-meta"><span class="post-date">${dateStr}</span>`;
   tags.forEach(tag => {
     const isActive = tag === activeTagFilter;
@@ -530,11 +714,11 @@ function buildPostCard(post) {
   if (searchQuery) bodyHtml = highlightText(bodyHtml, searchQuery);
 
   const adminBar = isAdmin
-  ? `<div class="post-admin-bar">
-       <button class="btn-edit" data-id="${post.id}">Edit post</button>
-       <button class="btn-delete" data-id="${post.id}">Delete post</button>
-     </div>`
-  : '';
+    ? `<div class="post-admin-bar">
+         <button class="btn-edit" data-id="${post.id}">Edit post</button>
+         <button class="btn-delete" data-id="${post.id}">Delete post</button>
+       </div>`
+    : '';
 
   card.innerHTML = metaHtml + `<div class="post-body">${bodyHtml}</div>` + adminBar;
 
@@ -548,7 +732,6 @@ function buildPostCard(post) {
   card.querySelector('.btn-delete')?.addEventListener('click', () => deletePost(post.id));
   card.querySelector('.btn-edit')?.addEventListener('click', () => editPost(post));
 
-
   return card;
 }
 
@@ -558,6 +741,8 @@ function buildPostCard(post) {
 async function deletePost(id) {
   if (!confirm('Delete this post? This cannot be undone.')) return;
   try {
+    // Delete associated comments first
+    await db.from('comments').delete().eq('post_id', id);
     const { error } = await db.from('posts').delete().eq('id', id);
     if (error) throw error;
     await applyFilters();
@@ -570,18 +755,11 @@ async function deletePost(id) {
    EDIT POST
    ============================================= */
 async function editPost(post) {
-  // Scroll to editor and populate it
   editorSection.classList.remove('hidden');
   editorSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-
-  // Load content into Quill
   quill.root.innerHTML = post.content || '';
-
-  // Load tags
   currentTags = Array.isArray(post.tags) ? [...post.tags] : [];
   renderTagPills();
-
-  // Swap Publish button to Save
   publishBtn.textContent = 'Save changes';
   publishBtn.dataset.editId = post.id;
 }
@@ -644,7 +822,9 @@ function walkTextNodes(node, query) {
   }
 }
 
-// ---- SUBSCRIBE ----
+/* =============================================
+   SUBSCRIBE
+   ============================================= */
 document.getElementById('subscribe-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const email = document.getElementById('sub-email').value.trim();
@@ -654,13 +834,11 @@ document.getElementById('subscribe-form').addEventListener('submit', async (e) =
   btn.disabled = true;
   msg.textContent = 'Subscribing…';
 
-  const { error } = await db         
-    .from('subscribers')
-    .insert([{ email }]);
+  const { error } = await db.from('subscribers').insert([{ email }]);
 
   if (error) {
     msg.textContent = error.code === '23505'
-      ? 'You\'re already subscribed!'
+      ? "You're already subscribed!"
       : 'Something went wrong. Try again.';
   } else {
     msg.textContent = '✓ You\'re subscribed!';
@@ -670,7 +848,9 @@ document.getElementById('subscribe-form').addEventListener('submit', async (e) =
   btn.disabled = false;
 });
 
-// ---- NOTIFY ON PUBLISH ----
+/* =============================================
+   NOTIFY ON PUBLISH
+   ============================================= */
 async function notifySubscribers(postTitle, postContent) {
   try {
     const res = await fetch('https://sdltggiedqstrsnvvjmj.supabase.co/functions/v1/notify-subscribers', {
@@ -688,7 +868,8 @@ async function notifySubscribers(postTitle, postContent) {
     console.error('Failed to notify subscribers:', err);
   }
 }
+
 /* =============================================
    INIT
    ============================================= */
-applyFilters();
+loadPersonalities().then(() => applyFilters());
