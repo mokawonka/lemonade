@@ -4,7 +4,7 @@
 const SUPABASE_URL      = 'https://sdltggiedqstrsnvvjmj.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNkbHRnZ2llZHFzdHJzbnZ2am1qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU1NjM0NDAsImV4cCI6MjA5MTEzOTQ0MH0.20Z2gkI2V50BOXdVwFuvm4SjPVVgP9QGdjNH7BLqCkI';
 const PAGE_SIZE = 8;
-const AI_COMMENT_DELAY_MS = 0.1 * 60 * 1000; // 5 minutes
+const AI_COMMENT_DELAY_MS = 0.1 * 60 * 1000; // 6 seconds
 
 /* =============================================
    SUPABASE CLIENT
@@ -22,19 +22,27 @@ let currentTags   = [];
 let activeTagFilter = null;
 let searchQuery   = '';
 let personalities = [];
+let personalityMap = {};
+
 
 /* =============================================
    LOAD PERSONALITIES
    ============================================= */
 async function loadPersonalities() {
   try {
-    personalities = JSON.parse(document.getElementById('personalities-data').textContent);
+    personalities = window.personalities || [];
+
+    // build fast lookup map: name → full persona object
+    personalityMap = Object.fromEntries(
+      personalities.map(p => [p.name, p])
+    );
+
   } catch (err) {
-    console.error('Could not parse personalities:', err);
+    console.error('Could not load personalities:', err);
     personalities = [];
+    personalityMap = {};
   }
 }
-
 /* =============================================
    DOM REFS
    ============================================= */
@@ -369,25 +377,6 @@ function stripHtml(html) {
 }
 
 /**
- * Call Gemini 2.0 Flash (free tier) for a comment.
- */
-async function generateAIComment(persona, postText, imageUrls = []) {
-  const res = await fetch(
-    'https://sdltggiedqstrsnvvjmj.supabase.co/functions/v1/ai-comment',
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-      },
-      body: JSON.stringify({ postText, persona, imageUrls }),
-    }
-  );
-  const data = await res.json();
-  return data.comment || '';
-}
-
-/**
  * Save a comment to Supabase.
  */
 async function saveComment(postId, persona, content) {
@@ -413,6 +402,27 @@ function extractImagesFromHtml(html) {
     .filter(src => src && src.startsWith('http'));
 }
 
+async function generateAICommentsBatch(postText, personas, imageUrls = []) {
+  const res = await fetch(
+    'https://sdltggiedqstrsnvvjmj.supabase.co/functions/v1/ai-comment',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify({
+        postText,
+        personas,
+        imageUrls
+      }),
+    }
+  );
+
+  const data = await res.json();
+  return data.comments || [];
+}
+
 function scheduleAIComments(postId, postHtml) {
   if (!personalities.length) return;
 
@@ -420,32 +430,36 @@ function scheduleAIComments(postId, postHtml) {
     const postText = stripHtml(postHtml);
     const imageUrls = extractImagesFromHtml(postHtml);
 
-    for (const persona of personalities) {
-      try {
-        const commentText = await generateAIComment(persona, postText, imageUrls);
-        if (!commentText) continue;
+    try {
+      const comments = await generateAICommentsBatch(
+        postText,
+        personalities,
+        imageUrls
+      );
 
-        const { data, error } = await db.from('comments').insert([{
+      for (const c of comments) {
+        await db.from('comments').insert([{
           post_id: postId,
-          persona_name: persona.name,
-          persona_color: persona.color,
-          content: commentText,
+          persona_name: c.name,
+          persona_color:
+            personalities.find(p => p.name === c.name)?.color || '#000',
+          content: c.comment,
           created_at: new Date().toISOString()
-        }]).select();
+        }]);
 
-        if (error) throw error;
         appendCommentToCard(postId, {
-          persona_name: persona.name,
-          persona_color: persona.color,
-          content: commentText,
+          persona_name: c.name,
+          persona_color:
+            personalities.find(p => p.name === c.name)?.color || '#000',
+          content: c.comment,
           created_at: new Date().toISOString()
         });
 
-      } catch (err) {
-        console.error(`[AI] Failed for ${persona.name}:`, err);
+        await new Promise(r => setTimeout(r, 15000));
       }
 
-      await new Promise(resolve => setTimeout(resolve, 15000));
+    } catch (err) {
+      console.error("[AI batch failed]", err);
     }
   }, AI_COMMENT_DELAY_MS);
 }
@@ -530,7 +544,7 @@ function buildCommentEl(comment) {
 
   el.innerHTML = `
     <div class="ai-comment-header">
-      <span class="ai-comment-name" style="color:${escapeHtml(comment.persona_color)}">${escapeHtml(comment.persona_name)}</span>
+      <span class="ai-comment-name persona-name" data-persona="${escapeHtml(comment.persona_name)}" style="color:${escapeHtml(comment.persona_color)}; cursor:pointer;"> ${escapeHtml(comment.persona_name)}</span>
       <span class="ai-comment-date">${dateStr}</span>
     </div>
     <div class="ai-comment-body">${escapeHtml(comment.content)}</div>
@@ -868,6 +882,37 @@ async function notifySubscribers(postTitle, postContent) {
     console.error('Failed to notify subscribers:', err);
   }
 }
+
+
+const modal = document.getElementById("persona-modal");
+const personaTitle = document.getElementById("persona-title");
+const personaText = document.getElementById("persona-text");
+const personaClose = document.getElementById("persona-close");
+
+document.addEventListener("click", (e) => {
+  const el = e.target.closest(".persona-name");
+  if (!el) return;
+
+  const name = el.dataset.persona;
+  const persona = personalityMap[name];
+
+  if (!persona) return;
+
+  personaTitle.textContent = persona.name;
+  personaTitle.style.color = persona.color || '#000';
+  personaText.textContent = persona.persona;
+
+  modal.classList.remove("hidden");
+});
+
+personaClose.addEventListener("click", () => {
+  modal.classList.add("hidden");
+});
+
+modal.addEventListener("click", (e) => {
+  if (e.target === modal) modal.classList.add("hidden");
+});
+
 
 /* =============================================
    INIT
