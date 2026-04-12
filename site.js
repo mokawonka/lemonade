@@ -4,7 +4,7 @@
 const SUPABASE_URL      = 'https://sdltggiedqstrsnvvjmj.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNkbHRnZ2llZHFzdHJzbnZ2am1qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU1NjM0NDAsImV4cCI6MjA5MTEzOTQ0MH0.20Z2gkI2V50BOXdVwFuvm4SjPVVgP9QGdjNH7BLqCkI';
 const PAGE_SIZE = 8;
-const AI_COMMENT_DELAY_MS = 0.1 * 60 * 1000; // 6 seconds
+const AI_COMMENT_DELAY_MS = 1000; // 1 second
 
 /* =============================================
    SUPABASE CLIENT
@@ -24,7 +24,6 @@ let searchQuery   = '';
 let personalities = [];
 let personalityMap = {};
 let currentUsername = '';
-
 
 /* =============================================
    LOAD PERSONALITIES
@@ -343,7 +342,6 @@ publishBtn.addEventListener('click', async () => {
       const postTitle = quill.getText().trim().split('\n')[0].slice(0, 80) || 'New post';
       await notifySubscribers(postTitle, quill.root.innerHTML);
 
-      // Schedule AI comments after 5 minutes
       scheduleAIComments(insertedPost.id, content);
     }
 
@@ -438,38 +436,73 @@ function scheduleAIComments(postId, postHtml) {
     const postText = stripHtml(postHtml);
     const imageUrls = extractImagesFromHtml(postHtml);
 
+    showCommentsStatus(postId, 'loading');
+
     try {
-      const comments = await generateAICommentsBatch(
-        postText,
-        personalities,
-        imageUrls
-      );
+      const comments = await generateAICommentsBatch(postText, personalities, imageUrls);
 
+      // Insert all comments to DB in one batch
+      const rows = comments.map(c => ({
+        post_id: postId,
+        persona_name: c.name,
+        persona_color: personalities.find(p => p.name === c.name)?.color || '#000',
+        content: c.comment,
+        created_at: new Date().toISOString()
+      }));
+
+      const { error } = await db.from('comments').insert(rows);
+      if (error) throw error;
+
+      hideCommentsStatus(postId);
+
+      // Display comments with a small visual stagger
       for (const c of comments) {
-        await db.from('comments').insert([{
-          post_id: postId,
-          persona_name: c.name,
-          persona_color:
-            personalities.find(p => p.name === c.name)?.color || '#000',
-          content: c.comment,
-          created_at: new Date().toISOString()
-        }]);
-
         appendCommentToCard(postId, {
           persona_name: c.name,
-          persona_color:
-            personalities.find(p => p.name === c.name)?.color || '#000',
+          persona_color: personalities.find(p => p.name === c.name)?.color || '#000',
           content: c.comment,
           created_at: new Date().toISOString()
         });
-
-        await new Promise(r => setTimeout(r, 5000));
+        await new Promise(r => setTimeout(r, 300));
       }
 
     } catch (err) {
       console.error("[AI batch failed]", err);
+      hideCommentsStatus(postId);
+      showCommentsStatus(postId, 'error');
     }
   }, AI_COMMENT_DELAY_MS);
+}
+
+
+function showCommentsStatus(postId, state) {
+  const card = document.querySelector(`#posts-feed [data-id="${postId}"]`);
+  if (!card) return;
+
+  hideCommentsStatus(postId); // remove any existing
+
+  const el = document.createElement('div');
+  el.className = `comments-status comments-status--${state}`;
+  el.dataset.statusFor = postId;
+
+  if (state === 'loading') {
+    el.innerHTML = `
+      <span class="comments-status-spinner"></span>
+      <span>AI agents generating comments…</span>
+    `;
+  } else if (state === 'error') {
+    el.innerHTML = `
+      <span class="comments-status-icon">✕</span>
+      <span>Error while generating comments</span>
+    `;
+  }
+
+  card.appendChild(el);
+}
+
+function hideCommentsStatus(postId) {
+  document.querySelectorAll(`[data-status-for="${postId}"]`)
+    .forEach(el => el.remove());
 }
 
 /**
@@ -746,11 +779,13 @@ function buildPostCard(post) {
   bodyHtml = optimizeImages(bodyHtml);
   if (searchQuery) bodyHtml = highlightText(bodyHtml, searchQuery);
 
-  const adminBar = isAdmin
+  const isOwner = isAdmin && currentUsername === post.author;
+
+  const adminBar = isOwner
     ? `<div class="post-admin-bar">
-         <button class="btn-edit" data-id="${post.id}">Edit post</button>
-         <button class="btn-delete" data-id="${post.id}">Delete post</button>
-       </div>`
+        <button class="btn-edit" data-id="${post.id}">Edit post</button>
+        <button class="btn-delete" data-id="${post.id}">Delete post</button>
+      </div>`
     : '';
 
   card.innerHTML = metaHtml + `<div class="post-body">${bodyHtml}</div>` + adminBar;
