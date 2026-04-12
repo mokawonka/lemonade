@@ -23,6 +23,7 @@ let activeTagFilter = null;
 let searchQuery   = '';
 let personalities = [];
 let personalityMap = {};
+let currentUsername = '';
 
 
 /* =============================================
@@ -126,13 +127,18 @@ async function imageHandler() {
     const file = input.files[0];
     if (!file) return;
     try {
-      const range = quill.getSelection();
-      quill.insertText(range.index, 'Uploading image...\n');
+      const range = quill.getSelection(true);
+      const placeholderText = 'Uploading image...\n';
+      quill.insertText(range.index, placeholderText, 'user');
+      quill.setSelection(range.index + placeholderText.length);
+
       const blob = await compressImageToBlob(file);
       const publicUrl = await uploadImageToSupabase(blob);
-      const currentRange = quill.getSelection();
-      quill.deleteText(currentRange.index - 1, 1);
-      quill.insertEmbed(currentRange.index, 'image', publicUrl);
+
+      // Delete the placeholder text precisely
+      quill.deleteText(range.index, placeholderText.length);
+      quill.insertEmbed(range.index, 'image', publicUrl);
+      quill.setSelection(range.index + 1);
     } catch (err) {
       console.error('Image upload failed:', err);
       alert('Image upload failed');
@@ -238,6 +244,7 @@ logoutBtn.addEventListener('click', logoutAdmin);
 db.auth.onAuthStateChange((_event, session) => {
   const wasAdmin = isAdmin;
   isAdmin = !!session;
+  currentUsername = session?.user?.email?.split('@')[0] || '';
   editorSection.classList.toggle('hidden', !isAdmin);
   adminBtn.title        = isAdmin ? 'Exit admin' : 'Admin';
   adminBtn.style.color  = isAdmin ? '#111' : '';
@@ -328,6 +335,7 @@ publishBtn.addEventListener('click', async () => {
       const { data: insertedPost, error } = await db.from('posts').insert([{
         content,
         tags: currentTags,
+        author: currentUsername, 
         created_at: new Date().toISOString()
       }]).select().single();
       if (error) throw error;
@@ -455,7 +463,7 @@ function scheduleAIComments(postId, postHtml) {
           created_at: new Date().toISOString()
         });
 
-        await new Promise(r => setTimeout(r, 15000));
+        await new Promise(r => setTimeout(r, 5000));
       }
 
     } catch (err) {
@@ -716,12 +724,23 @@ function buildPostCard(post) {
   });
 
   const tags = Array.isArray(post.tags) ? post.tags : [];
-  let metaHtml = `<div class="post-meta"><span class="post-date">${dateStr}</span>`;
+  const author = post.author || 'anonymous';
+  let metaHtml = `
+    <div class="post-meta">
+      <div class="post-meta-left">
+        <span class="post-author">
+          <span class="post-author-avatar">${author[0].toUpperCase()}</span>
+          ${author}
+        </span>
+        <span class="post-date">${dateStr}</span>
+      </div>
+      <div class="post-meta-tags">
+  `;
   tags.forEach(tag => {
     const isActive = tag === activeTagFilter;
     metaHtml += `<button class="post-tag${isActive ? ' active' : ''}" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`;
   });
-  metaHtml += `</div>`;
+  metaHtml += `</div></div>`;
 
   let bodyHtml = post.content || '';
   bodyHtml = optimizeImages(bodyHtml);
@@ -888,6 +907,9 @@ const modal = document.getElementById("persona-modal");
 const personaTitle = document.getElementById("persona-title");
 const personaText = document.getElementById("persona-text");
 const personaClose = document.getElementById("persona-close");
+const translateBtn = document.getElementById("translate-btn");
+const translationArea = document.getElementById("translation-area");
+const personaTranslation = document.getElementById("persona-translation");
 
 document.addEventListener("click", (e) => {
   const el = e.target.closest(".persona-name");
@@ -895,23 +917,38 @@ document.addEventListener("click", (e) => {
 
   const name = el.dataset.persona;
   const persona = personalityMap[name];
-
   if (!persona) return;
 
   personaTitle.textContent = persona.name;
   personaTitle.style.color = persona.color || '#000';
   personaText.textContent = persona.persona;
 
+  // Store translation on the button, reset state
+  translateBtn.dataset.translation = persona.translation || '';
+  translateBtn.dataset.translated = 'false';
+  translateBtn.textContent = 'Voir en français';
+  translateBtn.classList.toggle('hidden', !persona.translation);
+
   modal.classList.remove("hidden");
 });
 
-personaClose.addEventListener("click", () => {
-  modal.classList.add("hidden");
+translateBtn.addEventListener("click", () => {
+  const isShowingTranslation = translateBtn.dataset.translated === 'true';
+
+  if (isShowingTranslation) {
+    personaText.textContent = translateBtn.dataset.original;
+    translateBtn.textContent = 'Voir en français';
+    translateBtn.dataset.translated = 'false';
+  } else {
+    translateBtn.dataset.original = personaText.textContent;
+    personaText.textContent = translateBtn.dataset.translation;
+    translateBtn.textContent = 'View in english';
+    translateBtn.dataset.translated = 'true';
+  }
 });
 
-modal.addEventListener("click", (e) => {
-  if (e.target === modal) modal.classList.add("hidden");
-});
+personaClose.addEventListener("click", () => modal.classList.add("hidden"));
+modal.addEventListener("click", (e) => { if (e.target === modal) modal.classList.add("hidden"); });
 
 
 /* =============================================
