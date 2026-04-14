@@ -1188,3 +1188,28 @@ input[type="search"]::-webkit-search-cancel-button {
 
 @keyframes fadeIn  { from { opacity: 0; } to { opacity: 1; } }
 @keyframes scaleIn { from { transform: scale(.93); } to { transform: scale(1); } }
+
+.btn-regenerate {
+  display: inline-flex;
+  align-items: center;
+  margin: 0.75rem 1rem 0.5rem;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.78rem;
+  font-family: inherit;
+  color: #888;
+  background: transparent;
+  border: 1px dashed #ccc;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color 150ms, border-color 150ms;
+}
+
+.btn-regenerate:hover {
+  color: #444;
+  border-color: #999;
+}
+
+.btn-regenerate:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

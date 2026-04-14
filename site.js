@@ -471,10 +471,16 @@ function scheduleAIComments(postId, postHtml) {
     const postText = stripHtml(postHtml);
     const imageUrls = extractImagesFromHtml(postHtml);
 
+    // Remove any regenerate button that appeared during re-render
+    const card = document.querySelector(`#posts-feed [data-id="${postId}"]`);
+    card?.querySelector('.btn-regenerate')?.remove();
+
     showCommentsStatus(postId, 'loading');
 
     try {
       const comments = await generateAICommentsBatch(postText, personalities, imageUrls);
+
+      if (!comments.length) throw new Error('No comments returned');
 
       // Insert all comments to DB in one batch
       const rows = comments.map(c => ({
@@ -505,6 +511,8 @@ function scheduleAIComments(postId, postHtml) {
       console.error("[AI batch failed]", err);
       hideCommentsStatus(postId);
       showCommentsStatus(postId, 'error');
+      // Show regenerate button after failure
+      showRegenerateButton(postId, postHtml);
     }
   }, AI_COMMENT_DELAY_MS);
 }
@@ -538,6 +546,109 @@ function showCommentsStatus(postId, state) {
 function hideCommentsStatus(postId) {
   document.querySelectorAll(`[data-status-for="${postId}"]`)
     .forEach(el => el.remove());
+}
+
+/* =============================================
+   REGENERATE COMMENTS BUTTON
+   ============================================= */
+
+/**
+ * Show a "Regenerate comments" button on a post card.
+ * Only visible to the post owner (admin).
+ * Clears existing comments first, then re-runs generation.
+ */
+function showRegenerateButton(postId, postHtml) {
+  // Only show for admins
+  if (!isAdmin) return;
+
+  const card = document.querySelector(`#posts-feed [data-id="${postId}"]`);
+  if (!card) return;
+
+  // Don't add twice
+  if (card.querySelector('.btn-regenerate')) return;
+
+  const btn = document.createElement('button');
+  btn.className = 'btn-regenerate';
+  btn.title = 'Regenerate AI comments';
+  btn.innerHTML = `
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:inline-block;vertical-align:middle;margin-right:5px;">
+      <path d="M13.65 2.35A8 8 0 1 0 15 8h-2a6 6 0 1 1-1.06-3.39L10 6h5V1l-1.35 1.35z" fill="currentColor"/>
+    </svg>
+    Regenerate comments
+  `;
+
+  btn.addEventListener('click', async () => {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.innerHTML = `
+      <span class="comments-status-spinner" style="width:12px;height:12px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:5px;"></span>
+      Regenerating…
+    `;
+
+    try {
+      // Delete existing comments from DB for this post
+      const { error: delError } = await db.from('comments').delete().eq('post_id', postId);
+      if (delError) throw delError;
+
+      // Remove existing comments section from DOM
+      const existingSection = card.querySelector('.comments-section');
+      const existingToggle  = card.querySelector('.comments-toggle');
+      if (existingSection) existingSection.parentElement?.remove();
+      else if (existingToggle) existingToggle.parentElement?.remove();
+
+      // Remove the regenerate button itself (scheduleAIComments will re-add if needed)
+      btn.remove();
+
+      // Re-run generation immediately (no delay this time)
+      const postText  = stripHtml(postHtml);
+      const imageUrls = extractImagesFromHtml(postHtml);
+
+      showCommentsStatus(postId, 'loading');
+
+      const comments = await generateAICommentsBatch(postText, personalities, imageUrls);
+
+      if (!comments.length) throw new Error('No comments returned');
+
+      const rows = comments.map(c => ({
+        post_id: postId,
+        persona_name: c.name,
+        persona_color: personalities.find(p => p.name === c.name)?.color || '#000',
+        content: c.comment,
+        created_at: new Date().toISOString()
+      }));
+
+      const { error: insError } = await db.from('comments').insert(rows);
+      if (insError) throw insError;
+
+      hideCommentsStatus(postId);
+
+      for (const c of comments) {
+        appendCommentToCard(postId, {
+          persona_name: c.name,
+          persona_color: personalities.find(p => p.name === c.name)?.color || '#000',
+          content: c.comment,
+          created_at: new Date().toISOString()
+        });
+        await new Promise(r => setTimeout(r, 300));
+      }
+
+    } catch (err) {
+      console.error('[Regenerate] failed:', err);
+      hideCommentsStatus(postId);
+      showCommentsStatus(postId, 'error');
+      // Re-enable the button so the user can try again
+      btn.disabled = false;
+      btn.innerHTML = `
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:inline-block;vertical-align:middle;margin-right:5px;">
+          <path d="M13.65 2.35A8 8 0 1 0 15 8h-2a6 6 0 1 1-1.06-3.39L10 6h5V1l-1.35 1.35z" fill="currentColor"/>
+        </svg>
+        Regenerate comments
+      `;
+      card.appendChild(btn);
+    }
+  });
+
+  card.appendChild(btn);
 }
 
 /**
@@ -738,7 +849,10 @@ async function loadNextPage(isInitial = false) {
       const card = buildPostCard(post);
       const commentsSection = await buildCommentsSection(post.id);
       if (commentsSection) card.appendChild(commentsSection);
-      postsFeed.appendChild(card);
+      postsFeed.appendChild(card); 
+      if (!commentsSection && isAdmin && currentUsername === post.author) {
+        showRegenerateButton(post.id, post.content || '');
+      }
     }
 
     hasMorePosts = newPosts.length === PAGE_SIZE;
@@ -761,7 +875,10 @@ async function reRenderCurrentPosts() {
     const card = buildPostCard(post);
     const commentsSection = await buildCommentsSection(post.id);
     if (commentsSection) card.appendChild(commentsSection);
-    postsFeed.appendChild(card);
+    postsFeed.appendChild(card); 
+    if (!commentsSection && isAdmin && currentUsername === post.author) {
+      showRegenerateButton(post.id, post.content || '');
+    }
   }
   loadMoreBtn.classList.toggle('hidden', !hasMorePosts);
 }
@@ -1106,12 +1223,12 @@ async function fetchProposals() {
 
   try {
     const response = await fetch(
-      'https://sdltggiedqstrsnvvjmj.supabase.co/functions/v1/writing-proposals',  // ← edge function
+      'https://sdltggiedqstrsnvvjmj.supabase.co/functions/v1/writing-proposals',
       {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,  // ← same pattern as ai-comment
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
         },
         body: JSON.stringify({ postText: text }),
       }
