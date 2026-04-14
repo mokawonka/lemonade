@@ -54,7 +54,6 @@ const authConfirm    = document.getElementById('auth-confirm');
 const authError      = document.getElementById('auth-error');
 const editorSection  = document.getElementById('editor-section');
 const publishBtn     = document.getElementById('publish-btn');
-const logoutBtn      = document.getElementById('logout-btn');
 const tagInput       = document.getElementById('tag-input');
 const tagList        = document.getElementById('tag-list');
 const postsFeed      = document.getElementById('posts-feed');
@@ -84,6 +83,52 @@ const quill = new Quill('#quill-editor', {
       }
     }
   }
+});
+
+/* =============================================
+   DRAFT AUTOSAVE
+   ============================================= */
+const DRAFT_KEY = 'blog_draft';
+let draftTimer;
+
+function saveDraft() {
+  const content = quill.root.innerHTML;
+  const text = quill.getText().trim();
+  const hasContent = text || quill.getContents().ops.some(op => op.insert && typeof op.insert === 'object');
+  if (!hasContent) return;
+
+  const draft = {
+    content,
+    tags: [...currentTags],
+    savedAt: new Date().toISOString()
+  };
+  localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+}
+
+function restoreDraft() {
+  const raw = localStorage.getItem(DRAFT_KEY);
+  if (!raw) return;
+
+  try {
+    const draft = JSON.parse(raw);
+    if (!draft.content) return;
+
+    quill.root.innerHTML = draft.content;
+    currentTags = draft.tags || [];
+    renderTagPills();
+  } catch (e) {
+    console.warn('Failed to restore draft:', e);
+    localStorage.removeItem(DRAFT_KEY);
+  }
+}
+
+function clearDraft() {
+  localStorage.removeItem(DRAFT_KEY);
+}
+
+quill.on('text-change', () => {
+  clearTimeout(draftTimer);
+  draftTimer = setTimeout(saveDraft, 5000);
 });
 
 async function compressImageToBlob(file) {
@@ -238,17 +283,16 @@ async function logoutAdmin() {
   await db.auth.signOut();
 }
 
-logoutBtn.addEventListener('click', logoutAdmin);
-
 db.auth.onAuthStateChange((_event, session) => {
   const wasAdmin = isAdmin;
   isAdmin = !!session;
   currentUsername = session?.user?.email?.split('@')[0] || '';
   editorSection.classList.toggle('hidden', !isAdmin);
-  adminBtn.title        = isAdmin ? 'Exit admin' : 'Admin';
-  adminBtn.style.color  = isAdmin ? '#111' : '';
-  adminBtn.style.opacity = isAdmin ? '1' : '';
+  adminBtn.textContent = isAdmin ? 'Sign out' : 'Sign in';
+  adminBtn.title        = isAdmin ? 'Sign out' : 'Sign in';
   if (wasAdmin !== isAdmin) reRenderCurrentPosts();
+  // Restore draft when signing in
+  if (isAdmin && !wasAdmin) restoreDraft();
 });
 
 /* =============================================
@@ -348,6 +392,7 @@ publishBtn.addEventListener('click', async () => {
     quill.setText('');
     currentTags = [];
     renderTagPills();
+    clearDraft();
     await applyFilters();
 
   } catch (err) {
@@ -823,6 +868,7 @@ async function deletePost(id) {
    EDIT POST
    ============================================= */
 async function editPost(post) {
+  clearDraft();
   editorSection.classList.remove('hidden');
   editorSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
   quill.root.innerHTML = post.content || '';

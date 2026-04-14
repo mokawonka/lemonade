@@ -294,6 +294,11 @@ img {
 .btn-primary:hover { opacity: .8; }
 .btn-primary:disabled { opacity: .45; cursor: default; }
 
+.btn-sm {
+  padding: .25rem .75rem;
+  font-size: .775rem;
+}
+
 .btn-ghost {
   background: transparent;
   color: var(--text-muted);
