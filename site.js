@@ -409,16 +409,6 @@ publishBtn.addEventListener('click', async () => {
    ============================================= */
 
 /**
- * Detect the language of a post's text content.
- * Returns 'fr' for French, 'en' for everything else.
- */
-function detectLanguage(text) {
-  const frenchWords = /\b(le|la|les|un|une|des|est|sont|dans|pour|avec|sur|pas|que|qui|mais|ou|donc|car|ni|or|je|tu|il|elle|nous|vous|ils|elles|être|avoir|faire|plus|très|bien|aussi|comme|tout|même|encore|après|avant|sans|entre|depuis|pendant|voilà|c'est|j'ai|c'était|il y a)\b/gi;
-  const matches = (text.match(frenchWords) || []).length;
-  return matches >= 4 ? 'fr' : 'en';
-}
-
-/**
  * Strip HTML tags from content so the AI reads plain text.
  */
 function stripHtml(html) {
@@ -1030,6 +1020,157 @@ translateBtn.addEventListener("click", () => {
 
 personaClose.addEventListener("click", () => modal.classList.add("hidden"));
 modal.addEventListener("click", (e) => { if (e.target === modal) modal.classList.add("hidden"); });
+
+
+/* =============================================
+   WRITING PROPOSALS
+   ============================================= */
+const proposalsPanel   = document.getElementById('proposals-panel');
+const proposalsLoading = document.getElementById('proposals-loading');
+const proposalsContent = document.getElementById('proposals-content');
+const proposalsClose   = document.getElementById('proposals-close');
+const proposalsHeader  = document.getElementById('proposals-header');
+
+let proposalTimer;
+
+// ── Close button ──
+proposalsClose.addEventListener('click', () => {
+  proposalsPanel.classList.add('hidden');
+});
+
+// ── Drag to reposition ──
+let isDragging = false, dragOffsetX = 0, dragOffsetY = 0;
+
+proposalsHeader.addEventListener('mousedown', e => {
+  isDragging  = true;
+  dragOffsetX = e.clientX - proposalsPanel.getBoundingClientRect().left;
+  dragOffsetY = e.clientY - proposalsPanel.getBoundingClientRect().top;
+  e.preventDefault();
+});
+
+document.addEventListener('mousemove', e => {
+  if (!isDragging) return;
+  let x = e.clientX - dragOffsetX;
+  let y = e.clientY - dragOffsetY;
+  // keep inside viewport
+  x = Math.max(0, Math.min(x, window.innerWidth  - proposalsPanel.offsetWidth));
+  y = Math.max(0, Math.min(y, window.innerHeight - proposalsPanel.offsetHeight));
+  proposalsPanel.style.left = x + 'px';
+  proposalsPanel.style.top  = y + 'px';
+});
+
+document.addEventListener('mouseup', () => { isDragging = false; });
+
+// ── Position popup near cursor ──
+function positionNearCursor() {
+  const selection = quill.getSelection();
+  if (!selection) return;
+
+  const bounds = quill.getBounds(selection.index);
+  const editorRect = quill.root.getBoundingClientRect();
+
+  let x = editorRect.left + bounds.left + 12;
+  let y = editorRect.top  + bounds.bottom + window.scrollY + 12;
+
+  // flip left if overflows right edge
+  if (x + 320 > window.innerWidth) {
+    x = window.innerWidth - 320 - 16;
+  }
+
+  // flip above cursor if overflows bottom
+  const panelHeight = 360;
+  if (y + panelHeight > window.innerHeight + window.scrollY) {
+    y = editorRect.top + bounds.top + window.scrollY - panelHeight - 8;
+  }
+
+  proposalsPanel.style.left = x + 'px';
+  proposalsPanel.style.top  = y + 'px';
+}
+
+// ── Trigger on ctrl-space pause ──
+quill.root.addEventListener('keydown', (e) => {
+  if (e.ctrlKey && e.code === 'Space') {
+    e.preventDefault();
+    fetchProposals();
+  }
+});
+
+async function fetchProposals() {
+  const text = quill.getText().trim();
+  if (text.length < 30) return;
+
+  positionNearCursor();
+  proposalsPanel.classList.remove('hidden');
+  proposalsLoading.classList.remove('hidden');
+  proposalsContent.innerHTML = '';
+
+  try {
+    const response = await fetch(
+      'https://sdltggiedqstrsnvvjmj.supabase.co/functions/v1/writing-proposals',  // ← edge function
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,  // ← same pattern as ai-comment
+        },
+        body: JSON.stringify({ postText: text }),
+      }
+    );
+
+    const parsed = await response.json();
+
+    if (parsed.error) throw new Error(parsed.error);
+
+    renderProposals(parsed);
+
+  } catch (err) {
+    console.error('[Proposals] Error:', err);
+    proposalsContent.innerHTML = `<p style="font-size:.8rem;color:#aaa;">Could not load proposals.</p>`;
+  } finally {
+    proposalsLoading.classList.add('hidden');
+  }
+}
+
+
+// ── Render proposals ──
+function renderProposals(data) {
+  proposalsContent.innerHTML = '';
+
+  const groups = [
+    { key: 'completions', label: 'Continue writing', cls: 'proposal-completion', appendable: true },
+    { key: 'ideas',       label: 'Ideas to explore', cls: 'proposal-idea',       appendable: false },
+    { key: 'questions',   label: 'Reader questions', cls: 'proposal-question',   appendable: false },
+  ];
+
+  groups.forEach(({ key, label, cls, appendable }) => {
+    const items = data[key];
+    if (!items?.length) return;
+
+    const group = document.createElement('div');
+    group.className = 'proposal-group';
+    group.innerHTML = `<div class="proposal-group-label">${label}</div>`;
+
+    items.forEach(text => {
+      const el = document.createElement('div');
+      el.className  = `proposal-item ${cls}`;
+      el.textContent = text;
+
+      if (appendable) {
+        el.title = 'Click to append to your post';
+        el.addEventListener('click', () => {
+          const length = quill.getLength();
+          quill.insertText(length - 1, ' ' + text, 'user');
+          quill.setSelection(quill.getLength());
+          proposalsPanel.classList.add('hidden');
+        });
+      }
+
+      group.appendChild(el);
+    });
+
+    proposalsContent.appendChild(group);
+  });
+}
 
 
 /* =============================================
