@@ -1174,6 +1174,43 @@ function renderProposals(data) {
 
 
 /* =============================================
+   LIGHTBOX
+   ============================================= */
+const lightbox      = document.getElementById('lightbox');
+const lightboxImg   = document.getElementById('lightbox-img');
+const lightboxClose = document.getElementById('lightbox-close');
+
+function openLightbox(src) {
+  lightboxImg.src = src;
+  lightbox.classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeLightbox() {
+  lightbox.classList.add('hidden');
+  lightboxImg.src = '';
+  document.body.style.overflow = '';
+}
+
+// Close on overlay click or button
+lightbox.addEventListener('click', (e) => {
+  if (e.target !== lightboxImg) closeLightbox();
+});
+lightboxClose.addEventListener('click', closeLightbox);
+
+// Close on Escape
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !lightbox.classList.contains('hidden')) closeLightbox();
+});
+
+// Delegate clicks on post images
+document.getElementById('posts-feed').addEventListener('click', (e) => {
+  if (e.target.tagName === 'IMG' && e.target.closest('.post-body')) {
+    openLightbox(e.target.src);
+  }
+});
+
+/* =============================================
    INIT
    ============================================= */
 loadPersonalities().then(() => applyFilters());

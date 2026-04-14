@@ -1143,3 +1143,48 @@ input[type="search"]::-webkit-search-cancel-button {
 .proposal-item:hover                  { background: #eef3ff; border-color: #c5d5ff; }
 .proposal-item.proposal-completion:hover { background: #eefaf3; border-color: #b6e8cc; }
 .proposal-item.proposal-question:hover   { background: #fff8ee; border-color: #f5d9a0; }
+
+
+#lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.88);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: zoom-out;
+  animation: fadeIn 150ms ease;
+}
+
+#lightbox.hidden {
+  display: none;
+}
+
+#lightbox-img {
+  max-width: 92vw;
+  max-height: 92vh;
+  object-fit: contain;
+  border-radius: 6px;
+  box-shadow: 0 8px 48px rgba(0,0,0,0.5);
+  cursor: default;
+  animation: scaleIn 150ms ease;
+}
+
+#lightbox-close {
+  position: absolute;
+  top: 1.2rem;
+  right: 1.4rem;
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 1.5rem;
+  cursor: pointer;
+  opacity: .7;
+  line-height: 1;
+  transition: opacity 120ms;
+}
+#lightbox-close:hover { opacity: 1; }
+
+@keyframes fadeIn  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes scaleIn { from { transform: scale(.93); } to { transform: scale(1); } }
