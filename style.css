@@ -1213,3 +1213,56 @@ input[type="search"]::-webkit-search-cancel-button {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* =============================================
+   COOLDOWN MODAL
+   ============================================= */
+.cooldown-msg {
+  font-size: .9rem;
+  color: var(--text-muted);
+  margin-bottom: 1.5rem;
+  line-height: 1.6;
+}
+
+.cooldown-timer-wrap {
+  position: relative;
+  width: 88px;
+  height: 88px;
+  margin: 0 auto 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cooldown-ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.cooldown-ring-bg {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 3;
+}
+
+.cooldown-ring-fill {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 113.1; /* 2π × 18 */
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 1s linear;
+}
+
+#cooldown-seconds {
+  position: relative;
+  font-family: var(--font-serif);
+  font-size: 1.35rem;
+  color: var(--text);
+  letter-spacing: -.02em;
+  z-index: 1;
+}

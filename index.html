@@ -35,7 +35,7 @@
   <!-- ADMIN PASSWORD MODAL -->
   <div id="auth-modal" class="modal-overlay hidden">
     <div class="modal-box">
-      <h3>Admin Access</h3>
+      <h3>Sign in</h3>
       <input id="admin-pass" type="password" placeholder="Password" autocomplete="off">
       <div class="modal-actions">
         <button id="auth-cancel" class="btn-ghost">Cancel</button>
@@ -104,6 +104,23 @@
       <div id="translation-area" class="hidden">
         <p class="translation-label">Traduction</p>
         <p id="persona-translation"></p>
+      </div>
+    </div>
+  </div>
+
+  <div id="cooldown-modal" class="modal-overlay hidden">
+    <div class="modal-box">
+      <h3>Slow down ✦</h3>
+      <p class="cooldown-msg">You posted recently. Please wait before publishing again.</p>
+      <div class="cooldown-timer-wrap">
+        <svg class="cooldown-ring" viewBox="0 0 44 44">
+          <circle class="cooldown-ring-bg" cx="22" cy="22" r="18"/>
+          <circle id="cooldown-ring-fill" class="cooldown-ring-fill" cx="22" cy="22" r="18"/>
+        </svg>
+        <span id="cooldown-seconds">—</span>
+      </div>
+      <div class="modal-actions" style="justify-content:center">
+        <button id="cooldown-close" class="btn-ghost">Got it</button>
       </div>
     </div>
   </div>

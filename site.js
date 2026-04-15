@@ -351,6 +351,67 @@ function cleanYouTubeEmbeds(html) {
 }
 
 /* =============================================
+   COOLDOWN MODAL
+   ============================================= */
+const cooldownModal   = document.getElementById('cooldown-modal');
+const cooldownSeconds = document.getElementById('cooldown-seconds');
+const cooldownClose   = document.getElementById('cooldown-close');
+const cooldownRingFill = document.getElementById('cooldown-ring-fill');
+
+const COOLDOWN_MS = 8 * 60 * 1000; // 8 minutes
+const RING_CIRCUMFERENCE = 2 * Math.PI * 18; // r=18
+
+let cooldownInterval = null;
+
+cooldownClose.addEventListener('click', closeCooldownModal);
+cooldownModal.addEventListener('click', e => { if (e.target === cooldownModal) closeCooldownModal(); });
+
+function closeCooldownModal() {
+  cooldownModal.classList.add('hidden');
+  if (cooldownInterval) { clearInterval(cooldownInterval); cooldownInterval = null; }
+}
+
+function openCooldownModal(msRemaining) {
+  cooldownModal.classList.remove('hidden');
+
+  function tick() {
+    const secs = Math.ceil(msRemaining / 1000);
+    if (secs <= 0) { closeCooldownModal(); return; }
+
+    const mins = Math.floor(secs / 60);
+    const s    = secs % 60;
+    cooldownSeconds.textContent = `${mins}:${String(s).padStart(2, '0')}`;
+
+    // Arc: full at start → empty at 0
+    const progress = msRemaining / COOLDOWN_MS;
+    const dashOffset = RING_CIRCUMFERENCE * (1 - progress);
+    cooldownRingFill.style.strokeDashoffset = dashOffset;
+
+    msRemaining -= 1000;
+  }
+
+  tick();
+  cooldownInterval = setInterval(tick, 1000);
+}
+
+async function checkCooldown() {
+  const { data, error } = await db
+    .from('posts')
+    .select('created_at')
+    .eq('author', currentUsername)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  if (error || !data) return 0; // no previous post → no cooldown
+
+  const elapsed = Date.now() - new Date(data.created_at).getTime();
+  const remaining = COOLDOWN_MS - elapsed;
+  return remaining > 0 ? remaining : 0;
+}
+
+
+/* =============================================
    PUBLISH
    ============================================= */
 publishBtn.addEventListener('click', async () => {
@@ -363,6 +424,14 @@ publishBtn.addEventListener('click', async () => {
   }
 
   const editId = publishBtn.dataset.editId;
+  // Cooldown check only applies to new posts, not edits
+  if (!editId) {
+    const remaining = await checkCooldown();
+    if (remaining > 0) {
+      openCooldownModal(remaining);
+      return;
+    }
+  }
   publishBtn.disabled = true;
   publishBtn.textContent = editId ? 'Saving…' : 'Publishing…';
 
