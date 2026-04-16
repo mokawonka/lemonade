@@ -1327,32 +1327,56 @@ async function fetchProposals() {
   proposalsContent.innerHTML = '';
 
   try {
-    const response = await fetch(`${LOCAL_LLM_URL}/api/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: LOCAL_MODEL,
-        prompt: buildPrompt(text),
-        stream: false,
-        options: {
-          temperature: 0.8,
-          num_predict: 400,
-          stop: ['\n\n\n'],
-        },
-      }),
-    });
+    let raw = null;
 
-    const data = await response.json();
-    const raw = (data.response || '').trim();
+    // ── Try Ollama first (3s timeout) ──
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 3000);
+
+      const response = await fetch(`${LOCAL_LLM_URL}/api/generate`, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: LOCAL_MODEL,
+          prompt: buildPrompt(text),
+          stream: false,
+          options: { temperature: 0.8, num_predict: 400, stop: ['\n\n\n'] },
+        }),
+      });
+
+      clearTimeout(timeout);
+      const data = await response.json();
+      raw = (data.response || '').trim();
+      console.log('[Proposals] Using Ollama');
+
+    } catch (ollamaErr) {
+      console.warn('[Proposals] Ollama unreachable, falling back to Claude:', ollamaErr.message);
+
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 1000,
+          messages: [{ role: 'user', content: buildPrompt(text) }],
+        }),
+      });
+
+      const data = await response.json();
+      raw = (data.content?.[0]?.text || '').trim();
+      console.log('[Proposals] Using Claude fallback');
+    }
+
+    // ── Parse (same for both sources) ──
     const cleaned = raw.replace(/```json/g, '').replace(/```/g, '').trim();
     const match = cleaned.match(/\{[\s\S]*\}/);
     if (!match) throw new Error('No JSON in response');
 
-    // Robust extraction: parse each array field with regex instead of JSON.parse
     function extractArrayField(json, field) {
       const fieldMatch = json.match(new RegExp(`"${field}"\\s*:\\s*\\[([\\s\\S]*?)\\]`));
       if (!fieldMatch) return [];
-      // Split on lines that look like quoted strings, handle apostrophes safely
       return [...fieldMatch[1].matchAll(/"((?:[^"\\]|\\.)*)"/g)]
         .map(m => m[1].replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\\\/g, '\\'));
     }
@@ -1366,18 +1390,15 @@ async function fetchProposals() {
 
   } catch (err) {
     console.error('[Proposals] Error:', err);
-    const isOffline = err instanceof TypeError || err.message === 'No JSON in response';
-    proposalsContent.innerHTML = isOffline
-      ? `<div style="text-align:center;padding:1rem 0;">
-           <span style="font-size:1.4rem;">📡</span>
-           <p style="font-size:.85rem;color:#aaa;margin:.4rem 0 0;">Local server is offline.<br>Proposals unavailable.</p>
-         </div>`
-      : `<p style="font-size:.8rem;color:#aaa;">Could not load proposals.</p>`;
+    proposalsContent.innerHTML = `
+      <div style="text-align:center;padding:1rem 0;">
+        <span style="font-size:1.4rem;">📡</span>
+        <p style="font-size:.85rem;color:#aaa;margin:.4rem 0 0;">Could not reach any model.<br>Proposals unavailable.</p>
+      </div>`;
   } finally {
     proposalsLoading.classList.add('hidden');
   }
 }
-
 
 // ── Render proposals ──
 function renderProposals(data) {
