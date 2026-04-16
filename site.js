@@ -95,7 +95,11 @@ function saveDraft() {
   const content = quill.root.innerHTML;
   const text = quill.getText().trim();
   const hasContent = text || quill.getContents().ops.some(op => op.insert && typeof op.insert === 'object');
-  if (!hasContent) return;
+
+  if (!hasContent) {
+    clearDraft();
+    return;
+  }
 
   const draft = {
     content,
@@ -1281,6 +1285,38 @@ quill.root.addEventListener('keydown', (e) => {
   }
 });
 
+const LOCAL_LLM_URL = 'http://t14s.tail03228d.ts.net:11434';
+const LOCAL_MODEL   = 'qwen2.5:0.5b'; 
+
+function detectLanguage(text) {
+  const sample = text.slice(0, 600).toLowerCase();
+  const accents = (sample.match(/[àâäéèêëîïôöùûüçœæ]/g) || []).length;
+  const frenchWords = (sample.match(
+    /\b(le|la|les|un|une|des|est|sont|dans|pour|avec|sur|pas|que|qui|mais|ou|donc|car|je|tu|il|elle|nous|vous|ils|elles|très|bien|aussi|comme|tout|même|encore|après|avant|sans|depuis|c'est|j'ai|au|du|ce|se|ne|en|et|de|à)\b/gi
+  ) || []).length;
+  return (accents * 3 + frenchWords) >= 3 ? 'fr' : 'en';
+}
+
+function buildPrompt(postText) {
+  const lang = detectLanguage(postText);
+  const langLine = lang === 'fr'
+    ? 'Tu DOIS répondre en français.'
+    : 'You MUST reply in English.';
+
+  return `You are a writing assistant. Based on the blog post excerpt below, generate writing proposals.
+Return ONLY valid JSON, no markdown, no explanation.
+Format: {"completions":["...","..."],"ideas":["...","..."],"questions":["...","..."]}
+- completions: 2 short sentence continuations flowing naturally from the last sentence
+- ideas: 2 related topic angles the post could explore
+- questions: 2 thought-provoking questions a reader might ask
+${langLine}
+
+POST:
+${postText.slice(-1200)}
+
+JSON:`;
+}
+
 async function fetchProposals() {
   const text = quill.getText().trim();
   if (text.length < 30) return;
@@ -1291,27 +1327,52 @@ async function fetchProposals() {
   proposalsContent.innerHTML = '';
 
   try {
-    const response = await fetch(
-      'https://sdltggiedqstrsnvvjmj.supabase.co/functions/v1/writing-proposals',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+    const response = await fetch(`${LOCAL_LLM_URL}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: LOCAL_MODEL,
+        prompt: buildPrompt(text),
+        stream: false,
+        options: {
+          temperature: 0.8,
+          num_predict: 400,
+          stop: ['\n\n\n'],
         },
-        body: JSON.stringify({ postText: text }),
-      }
-    );
+      }),
+    });
 
-    const parsed = await response.json();
+    const data = await response.json();
+    const raw = (data.response || '').trim();
+    const cleaned = raw.replace(/```json/g, '').replace(/```/g, '').trim();
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('No JSON in response');
 
-    if (parsed.error) throw new Error(parsed.error);
+    // Robust extraction: parse each array field with regex instead of JSON.parse
+    function extractArrayField(json, field) {
+      const fieldMatch = json.match(new RegExp(`"${field}"\\s*:\\s*\\[([\\s\\S]*?)\\]`));
+      if (!fieldMatch) return [];
+      // Split on lines that look like quoted strings, handle apostrophes safely
+      return [...fieldMatch[1].matchAll(/"((?:[^"\\]|\\.)*)"/g)]
+        .map(m => m[1].replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\\\/g, '\\'));
+    }
 
-    renderProposals(parsed);
+    const jsonStr = match[0];
+    renderProposals({
+      completions: extractArrayField(jsonStr, 'completions'),
+      ideas:       extractArrayField(jsonStr, 'ideas'),
+      questions:   extractArrayField(jsonStr, 'questions'),
+    });
 
   } catch (err) {
     console.error('[Proposals] Error:', err);
-    proposalsContent.innerHTML = `<p style="font-size:.8rem;color:#aaa;">Could not load proposals.</p>`;
+    const isOffline = err instanceof TypeError || err.message === 'No JSON in response';
+    proposalsContent.innerHTML = isOffline
+      ? `<div style="text-align:center;padding:1rem 0;">
+           <span style="font-size:1.4rem;">📡</span>
+           <p style="font-size:.85rem;color:#aaa;margin:.4rem 0 0;">Local server is offline.<br>Proposals unavailable.</p>
+         </div>`
+      : `<p style="font-size:.8rem;color:#aaa;">Could not load proposals.</p>`;
   } finally {
     proposalsLoading.classList.add('hidden');
   }
