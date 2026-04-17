@@ -1281,7 +1281,7 @@ quill.root.addEventListener('keydown', (e) => {
   }
 });
 
-const LOCAL_LLM_URL = 'http://t14s.tail03228d.ts.net:11434';
+const LOCAL_LLM_URL = 'https://t14s.tail03228d.ts.net';
 const LOCAL_MODEL   = 'qwen2.5:0.5b'; 
 
 function detectLanguage(text) {
