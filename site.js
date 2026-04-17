@@ -95,11 +95,7 @@ function saveDraft() {
   const content = quill.root.innerHTML;
   const text = quill.getText().trim();
   const hasContent = text || quill.getContents().ops.some(op => op.insert && typeof op.insert === 'object');
-
-  if (!hasContent) {
-    clearDraft();
-    return;
-  }
+  if (!hasContent) return;
 
   const draft = {
     content,
@@ -1285,7 +1281,7 @@ quill.root.addEventListener('keydown', (e) => {
   }
 });
 
-const LOCAL_LLM_URL = 'https://t14s.tail03228d.ts.net';
+const LOCAL_LLM_URL = 'http://t14s.tail03228d.ts.net:11434';
 const LOCAL_MODEL   = 'qwen2.5:0.5b'; 
 
 function detectLanguage(text) {
@@ -1317,6 +1313,7 @@ ${postText.slice(-1200)}
 JSON:`;
 }
 
+async function fetchProposals() {
   const text = quill.getText().trim();
   if (text.length < 30) return;
 
