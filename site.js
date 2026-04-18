@@ -24,6 +24,7 @@ let searchQuery   = '';
 let personalities = [];
 let personalityMap = {};
 let currentUsername = '';
+let filterVersion = 0;  
 
 /* =============================================
    LOAD PERSONALITIES
@@ -862,6 +863,8 @@ async function fetchPosts(offset, limit = PAGE_SIZE) {
    FILTER + SEARCH + PAGINATION
    ============================================= */
 async function applyFilters() {
+  const version = ++filterVersion;  
+
   loadedPosts  = [];
   hasMorePosts = true;
   postsFeed.innerHTML = '';
@@ -885,10 +888,15 @@ async function applyFilters() {
 
   noResults.classList.add('hidden');
   loadMoreBtn.classList.add('hidden');
-  await loadNextPage(true);
+  await loadNextPage(true, version);  
 }
 
-async function loadNextPage(isInitial = false) {
+async function loadNextPage(isInitial = false, expectedVersion = null) {
+  // Ignore stale loads from previous filter changes
+  if (expectedVersion !== null && expectedVersion !== filterVersion) {
+    return;
+  }
+
   const offset  = loadedPosts.length;
   const loading = document.getElementById('posts-loading');
 
@@ -902,8 +910,16 @@ async function loadNextPage(isInitial = false) {
   try {
     const newPosts = await fetchPosts(offset);
 
+    // Re-check after the async fetch (this prevents duplicates)
+    if (expectedVersion !== null && expectedVersion !== filterVersion) {
+      return;
+    }
+
     if (isInitial) loading.classList.add('hidden');
-    else { loadMoreBtn.textContent = 'Load more'; loadMoreBtn.disabled = false; }
+    else {
+      loadMoreBtn.textContent = 'Load more';
+      loadMoreBtn.disabled = false;
+    }
 
     if (newPosts.length === 0) {
       if (loadedPosts.length === 0) noResults.classList.remove('hidden');
@@ -930,7 +946,10 @@ async function loadNextPage(isInitial = false) {
   } catch (err) {
     console.error('Load error:', err);
     if (isInitial) loading.classList.add('hidden');
-    else { loadMoreBtn.textContent = 'Load more'; loadMoreBtn.disabled = false; }
+    else {
+      loadMoreBtn.textContent = 'Load more';
+      loadMoreBtn.disabled = false;
+    }
     if (loadedPosts.length === 0) noResults.classList.remove('hidden');
   }
 }
@@ -1057,7 +1076,9 @@ async function editPost(post) {
 /* =============================================
    LOAD MORE
    ============================================= */
-loadMoreBtn.addEventListener('click', () => loadNextPage(false));
+loadMoreBtn.addEventListener('click', () => {
+  loadNextPage(false, filterVersion);
+});
 
 /* =============================================
    SEARCH
@@ -1070,6 +1091,10 @@ searchInput.addEventListener('input', () => {
     applyFilters();
   }, 280);
 });
+
+searchInput.addEventListener('focus', function () {
+  this.removeAttribute('readonly');
+}, { once: true });
 
 searchClear.addEventListener('click', () => {
   searchInput.value = '';
