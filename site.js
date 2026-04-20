@@ -336,22 +336,32 @@ function renderTagPills() {
 }
 
 function cleanYouTubeEmbeds(html) {
-  return html.replace(
-    /https?:\/\/(www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([\w-]{11})/g,
-    (_, __, id) => {
-      return `<iframe
-        width="100%"
-        height="400"
-        src="https://www.youtube.com/embed/${id}"
-        title="YouTube video player"
-        frameborder="0"
-        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-        referrerpolicy="strict-origin-when-cross-origin"
-        allowfullscreen
-        style="width:100%; height:400px; max-width:100%; border-radius:8px;">
-      </iframe>`;
+  const div = document.createElement('div');
+  div.innerHTML = html;
+
+  // Normalize Quill ql-video iframes
+  div.querySelectorAll('iframe.ql-video').forEach(iframe => {
+    const src = iframe.getAttribute('src') || '';
+    const match = src.match(/youtube\.com\/embed\/([\w-]{11})/);
+    if (!match) return;
+    iframe.removeAttribute('class');
+    iframe.setAttribute('width', '100%');
+    iframe.setAttribute('height', '400');
+    iframe.setAttribute('allow', 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture');
+    iframe.setAttribute('style', 'width:100%;height:400px;max-width:100%;border-radius:8px;display:block;');
+  });
+
+  // Convert any remaining bare YouTube URLs (not already in src attributes)
+  let result = div.innerHTML;
+  result = result.replace(
+    /(?<!src=")https?:\/\/(?:www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([\w-]{11})[^\s"]*/g,
+    (_, id) => {
+      const cleanId = id.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 11);
+      return `<iframe width="100%" height="400" src="https://www.youtube.com/embed/${cleanId}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen style="width:100%;height:400px;max-width:100%;border-radius:8px;display:block;"></iframe>`;
     }
   );
+
+  return result;
 }
 
 /* =============================================
