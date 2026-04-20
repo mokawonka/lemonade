@@ -93,13 +93,16 @@ const DRAFT_KEY = 'blog_draft';
 let draftTimer;
 
 function saveDraft() {
-  const content = quill.root.innerHTML;
   const text = quill.getText().trim();
   const hasContent = text || quill.getContents().ops.some(op => op.insert && typeof op.insert === 'object');
-  if (!hasContent) return;
+  
+  if (!hasContent) {
+    localStorage.removeItem(DRAFT_KEY);
+    return;
+  }
 
   const draft = {
-    content,
+    content: quill.root.innerHTML,
     tags: [...currentTags],
     savedAt: new Date().toISOString()
   };
@@ -192,7 +195,7 @@ async function imageHandler() {
 }
 
 quill.clipboard.addMatcher(Node.TEXT_NODE, (node, delta) => {
-  const ytRegex = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{11})/g;
+  const ytRegex = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([\w-]{11})/g;
   const text = node.data;
   let match, lastIndex = 0;
   const ops = [];
@@ -334,8 +337,8 @@ function renderTagPills() {
 
 function cleanYouTubeEmbeds(html) {
   return html.replace(
-    /https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{11})/g,
-    (_, __, ___, id) => {
+    /https?:\/\/(www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([\w-]{11})/g,
+    (_, __, id) => {
       return `<iframe
         width="100%"
         height="400"
@@ -454,7 +457,7 @@ publishBtn.addEventListener('click', async () => {
       if (error) throw error;
 
       const postTitle = quill.getText().trim().split('\n')[0].slice(0, 80) || 'New post';
-      await notifySubscribers(postTitle, quill.root.innerHTML);
+      await notifySubscribers(postTitle, content);
 
       scheduleAIComments(insertedPost.id, content);
     }
@@ -513,6 +516,23 @@ function extractImagesFromHtml(html) {
     .filter(src => src && src.startsWith('http'));
 }
 
+/* =============================================
+   EXTRACT YOUTUBE URLS FROM POST HTML
+   ============================================= */
+function extractYouTubeUrlsFromHtml(html) {
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  const urls = [];
+  div.querySelectorAll('iframe').forEach(iframe => {
+    const src = iframe.src || '';
+    const match = src.match(/youtube\.com\/embed\/([\w-]{11})/);
+    if (match) {
+      urls.push(`https://www.youtube.com/watch?v=${match[1]}`);
+    }
+  });
+  return urls;
+}
+
 async function generateAICommentsBatch(postText, personas, imageUrls = []) {
   const res = await fetch(
     'https://sdltggiedqstrsnvvjmj.supabase.co/functions/v1/ai-comment',
@@ -534,17 +554,53 @@ async function generateAICommentsBatch(postText, personas, imageUrls = []) {
   return data.comments || [];
 }
 
+/* =============================================
+   AI COMMENTS (with YouTube transcript support)
+   ============================================= */
 function scheduleAIComments(postId, postHtml) {
   if (!personalities.length) return;
 
   setTimeout(async () => {
-    const postText = stripHtml(postHtml);
-    const imageUrls = extractImagesFromHtml(postHtml);
-
-    // Remove any regenerate button that appeared during re-render
     const card = document.querySelector(`#posts-feed [data-id="${postId}"]`);
     card?.querySelector('.btn-regenerate')?.remove();
 
+    const youtubeUrls = extractYouTubeUrlsFromHtml(postHtml);
+    let postText = stripHtml(postHtml);
+    const imageUrls = extractImagesFromHtml(postHtml);
+
+    // ── If YouTube video detected, fetch transcript first ──
+    if (youtubeUrls.length > 0) {
+      showCommentsStatus(postId, 'transcript');
+
+      try {
+        const res = await fetch(
+          'https://sdltggiedqstrsnvvjmj.supabase.co/functions/v1/get-transcript',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            },
+            body: JSON.stringify({ videoUrl: youtubeUrls[0] }),
+          }
+        );
+
+        const data = await res.json();
+
+        if (data.transcript) {
+          console.log(`[YouTube] Transcript received for: "${data.title}"`);
+          // Prepend transcript to post text so Gemini has full context
+          postText = `[Video transcript: "${data.title}"]\n\n${data.transcript}\n\n[Post content]\n${postText}`;
+        } else {
+          console.warn('[YouTube] No transcript returned, falling back to post text');
+        }
+
+      } catch (err) {
+        console.warn('[YouTube] Transcript fetch failed, falling back to post text:', err);
+      }
+    }
+
+    // ── Generate AI comments ──
     showCommentsStatus(postId, 'loading');
 
     try {
@@ -552,7 +608,6 @@ function scheduleAIComments(postId, postHtml) {
 
       if (!comments.length) throw new Error('No comments returned');
 
-      // Insert all comments to DB in one batch
       const rows = comments.map(c => ({
         post_id: postId,
         persona_name: c.name,
@@ -566,7 +621,6 @@ function scheduleAIComments(postId, postHtml) {
 
       hideCommentsStatus(postId);
 
-      // Display comments with a small visual stagger
       for (const c of comments) {
         appendCommentToCard(postId, {
           persona_name: c.name,
@@ -578,10 +632,9 @@ function scheduleAIComments(postId, postHtml) {
       }
 
     } catch (err) {
-      console.error("[AI batch failed]", err);
+      console.error('[AI batch failed]', err);
       hideCommentsStatus(postId);
       showCommentsStatus(postId, 'error');
-      // Show regenerate button after failure
       showRegenerateButton(postId, postHtml);
     }
   }, AI_COMMENT_DELAY_MS);
@@ -592,7 +645,7 @@ function showCommentsStatus(postId, state) {
   const card = document.querySelector(`#posts-feed [data-id="${postId}"]`);
   if (!card) return;
 
-  hideCommentsStatus(postId); // remove any existing
+  hideCommentsStatus(postId);
 
   const el = document.createElement('div');
   el.className = `comments-status comments-status--${state}`;
@@ -603,6 +656,11 @@ function showCommentsStatus(postId, state) {
       <span class="comments-status-spinner"></span>
       <span>AI agents generating comments…</span>
     `;
+  } else if (state === 'transcript') {
+    el.innerHTML = `
+      <span class="comments-status-spinner"></span>
+      <span>Generating video transcript…</span>
+    `;
   } else if (state === 'error') {
     el.innerHTML = `
       <span class="comments-status-icon">✕</span>
@@ -612,6 +670,8 @@ function showCommentsStatus(postId, state) {
 
   card.appendChild(el);
 }
+
+
 
 function hideCommentsStatus(postId) {
   document.querySelectorAll(`[data-status-for="${postId}"]`)
@@ -1307,7 +1367,7 @@ quill.root.addEventListener('keydown', (e) => {
 });
 
 const LOCAL_LLM_URL = 'https://t14s.tail03228d.ts.net';
-const LOCAL_MODEL   = 'qwen2.5:0.5b'; 
+const LOCAL_MODEL   = 'qwen2.5:3b'; 
 
 function detectLanguage(text) {
   const sample = text.slice(0, 600).toLowerCase();
@@ -1324,13 +1384,14 @@ function buildPrompt(postText) {
     ? 'Tu DOIS répondre en français.'
     : 'You MUST reply in English.';
 
-  return `You are a writing assistant. Based on the blog post excerpt below, generate writing proposals.
-Return ONLY valid JSON, no markdown, no explanation.
-Format: {"completions":["...","..."],"ideas":["...","..."],"questions":["...","..."]}
-- completions: 2 short sentence continuations flowing naturally from the last sentence
-- ideas: 2 related topic angles the post could explore
-- questions: 2 thought-provoking questions a reader might ask
-${langLine}
+  return `You are a writing assistant. The user is writing and got stuck on the last word — it's a placeholder approximating what they want to say.
+  Your job is to replace ONLY that last word or expression with better alternatives that fit naturally.
+  Return ONLY valid JSON, no markdown, no explanation.
+  Format: {"completions":["...","...","...","..."]}
+  - completions: 4 alternatives that replace the last word/expression, keeping the rest of the sentence exactly as-is
+  - alternatives should vary in register (formal, casual, precise, metaphorical) but all fit the sentence naturally
+  - never complete or extend the sentence, only replace the last word
+  ${langLine}
 
 POST:
 ${postText.slice(-1200)}
@@ -1339,11 +1400,22 @@ JSON:`;
 }
 
 async function fetchProposals() {
+
   const text = quill.getText().trim();
-  if (text.length < 30) return;
 
   positionNearCursor();
   proposalsPanel.classList.remove('hidden');
+  proposalsLoading.classList.add('hidden');
+
+  if (text.length < 30) {
+    proposalsContent.innerHTML = `
+      <div style="text-align:center;padding:1rem 0;">
+        <span style="font-size:1.4rem;">✍️</span>
+        <p style="font-size:.85rem;color:#aaa;margin:.4rem 0 0;">Write a bit more<br>to get suggestions.</p>
+      </div>`;
+    return;
+  }
+
   proposalsLoading.classList.remove('hidden');
   proposalsContent.innerHTML = '';
 
