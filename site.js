@@ -80,12 +80,41 @@ const quill = new Quill('#quill-editor', {
         ['clean']
       ],
       handlers: {
-        image: imageHandler
+        image: imageHandler,
+        video: videoHandler 
       }
     }
   }
 });
 
+function videoHandler() {
+  const tooltip = quill.theme.tooltip;
+  const originalSave = tooltip.save.bind(tooltip);
+  const originalHide = tooltip.hide.bind(tooltip);
+
+  tooltip.save = function () {
+    const url = this.textbox.value;
+    const match = url.match(/(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([\w-]{11})/);
+    if (match) {
+      const embedUrl = `https://www.youtube.com/embed/${match[1].slice(0, 11)}`;
+      const range = quill.getSelection(true);
+      quill.insertEmbed(range.index, 'video', embedUrl, 'user');
+      quill.setSelection(range.index + 1);
+    }
+    tooltip.save = originalSave;
+    tooltip.hide = originalHide;
+    tooltip.hide();
+  };
+
+  tooltip.hide = function () {
+    tooltip.save = originalSave;
+    tooltip.hide = originalHide;
+    originalHide();
+  };
+
+  tooltip.edit('video');
+  tooltip.textbox.placeholder = 'YouTube URL…';
+}
 /* =============================================
    DRAFT AUTOSAVE
    ============================================= */
@@ -201,7 +230,7 @@ quill.clipboard.addMatcher(Node.TEXT_NODE, (node, delta) => {
   const ops = [];
   while ((match = ytRegex.exec(text)) !== null) {
     if (match.index > lastIndex) ops.push({ insert: text.slice(lastIndex, match.index) });
-    ops.push({ insert: { video: `https://www.youtube.com/embed/${match[1]}` } });
+    ops.push({ insert: { video: `https://www.youtube.com/embed/${match[1].slice(0, 11)}` } });
     lastIndex = match.index + match[0].length;
   }
   if (lastIndex < text.length) ops.push({ insert: text.slice(lastIndex) });
