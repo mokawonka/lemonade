@@ -1326,3 +1326,23 @@ input[type="search"]::-webkit-search-cancel-button {
   border-color: var(--text);
   box-shadow: 0 3px 12px rgba(0,0,0,.12);
 }
+
+
+.btn-danger {
+  background: #1a1a1a;
+  color: #fff;
+  border: 1px solid #1a1a1a;
+  border-radius: 8px;
+  padding: .45rem 1.1rem;
+  font-family: inherit;
+  font-size: .9rem;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+.btn-danger:hover { background: #333; border-color: #333; }
+
+.delete-msg {
+  font-size: .9rem;
+  color: #888;
+  margin: .25rem 0 1.25rem;
+}

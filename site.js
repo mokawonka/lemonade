@@ -496,9 +496,9 @@ publishBtn.addEventListener('click', async () => {
       if (error) throw error;
 
       const postTitle = quill.getText().trim().split('\n')[0].slice(0, 80) || 'New post';
-      await notifySubscribers(postTitle, content);
+      //await notifySubscribers(postTitle, content);
 
-      scheduleAIComments(insertedPost.id, content);
+      //scheduleAIComments(insertedPost.id, content);
     }
 
     quill.setText('');
@@ -1189,17 +1189,38 @@ function buildPostCard(post) {
 /* =============================================
    DELETE POST
    ============================================= */
-async function deletePost(id) {
-  if (!confirm('Delete this post? This cannot be undone.')) return;
-  try {
-    // Delete associated comments first
-    await db.from('comments').delete().eq('post_id', id);
-    const { error } = await db.from('posts').delete().eq('id', id);
-    if (error) throw error;
-    await applyFilters();
-  } catch (err) {
-    alert('Delete failed: ' + err.message);
+function deletePost(id) {
+  const modal   = document.getElementById('delete-modal');
+  const confirm = document.getElementById('delete-confirm');
+  const cancel  = document.getElementById('delete-cancel');
+
+  modal.classList.remove('hidden');
+
+  function cleanup() {
+    modal.classList.add('hidden');
+    confirm.removeEventListener('click', onConfirm);
+    cancel.removeEventListener('click', onCancel);
+    modal.removeEventListener('click', onOverlay);
   }
+
+  async function onConfirm() {
+    cleanup();
+    try {
+      await db.from('comments').delete().eq('post_id', id);
+      const { error } = await db.from('posts').delete().eq('id', id);
+      if (error) throw error;
+      await applyFilters();
+    } catch (err) {
+      alert('Delete failed: ' + err.message);
+    }
+  }
+
+  function onCancel()  { cleanup(); }
+  function onOverlay(e) { if (e.target === modal) cleanup(); }
+
+  confirm.addEventListener('click', onConfirm);
+  cancel.addEventListener('click', onCancel);
+  modal.addEventListener('click', onOverlay);
 }
 
 /* =============================================
