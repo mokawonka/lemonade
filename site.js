@@ -1034,6 +1034,7 @@ async function loadNextPage(isInitial = false, expectedVersion = null) {
       const commentsSection = await buildCommentsSection(post.id);
       if (commentsSection) card.appendChild(commentsSection);
       postsFeed.appendChild(card); 
+      applyPostTruncation(card);
       if (!commentsSection && isAdmin && currentUsername === post.author) {
         showRegenerateButton(post.id, post.content || '');
       }
@@ -1063,6 +1064,7 @@ async function reRenderCurrentPosts() {
     const commentsSection = await buildCommentsSection(post.id);
     if (commentsSection) card.appendChild(commentsSection);
     postsFeed.appendChild(card); 
+    applyPostTruncation(card);
     if (!commentsSection && isAdmin && currentUsername === post.author) {
       showRegenerateButton(post.id, post.content || '');
     }
@@ -1084,6 +1086,34 @@ function optimizeImages(html) {
     img.style.margin = '10px 0';
   });
   return div.innerHTML;
+}
+
+function applyPostTruncation(card) {
+  const wrap    = card.querySelector('.post-body-wrap');
+  const overlay = card.querySelector('.post-fade-overlay');
+  const bodyEl  = card.querySelector('.post-body');
+  if (!wrap || !overlay || !bodyEl) return;
+
+  function check() {
+    if (!overlay.isConnected) return; // already removed by "Read more"
+    if (bodyEl.scrollHeight <= 500) {
+      overlay.remove();
+      wrap.classList.remove('post-body-wrap--collapsible');
+    } else {
+      wrap.classList.add('post-body-wrap--collapsible');
+    }
+  }
+
+  // Initial check
+  check();
+
+  // Re-check after each image in the post finishes loading
+  // (lazy images load after the DOM is painted, inflating scrollHeight)
+  bodyEl.querySelectorAll('img').forEach(img => {
+    if (img.complete) return; // already loaded, no need to wait
+    img.addEventListener('load',  check, { once: true });
+    img.addEventListener('error', check, { once: true });
+  });
 }
 
 function buildPostCard(post) {
@@ -1127,7 +1157,21 @@ function buildPostCard(post) {
       </div>`
     : '';
 
-  card.innerHTML = metaHtml + `<div class="post-body">${bodyHtml}</div>` + adminBar;
+  card.innerHTML = metaHtml + `
+  <div class="post-body-wrap">
+    <div class="post-body">${bodyHtml}</div>
+    <div class="post-fade-overlay">
+      <button class="post-read-more">Read more</button>
+    </div>
+  </div>
+` + adminBar;
+
+  card.querySelector('.post-read-more')?.addEventListener('click', () => {
+    const wrap    = card.querySelector('.post-body-wrap');
+    const overlay = card.querySelector('.post-fade-overlay');
+    wrap?.classList.remove('post-body-wrap--collapsible');
+    overlay?.remove();
+  });
 
   card.querySelectorAll('.post-tag').forEach(btn => {
     btn.addEventListener('click', () => {
