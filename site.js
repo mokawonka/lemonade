@@ -496,9 +496,9 @@ publishBtn.addEventListener('click', async () => {
       if (error) throw error;
 
       const postTitle = quill.getText().trim().split('\n')[0].slice(0, 80) || 'New post';
-      //await notifySubscribers(postTitle, content);
+      await notifySubscribers(postTitle, content);
 
-      //scheduleAIComments(insertedPost.id, content);
+      scheduleAIComments(insertedPost.id, content);
     }
 
     quill.setText('');
