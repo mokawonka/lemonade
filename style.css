@@ -1351,3 +1351,104 @@ input[type="search"]::-webkit-search-cancel-button {
 }
 
 
+/* =============================================
+   PRIVATE MODE TOGGLE
+   ============================================= */
+.private-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  cursor: pointer;
+  user-select: none;
+  margin-right: auto;
+}
+
+.private-toggle-track {
+  position: relative;
+  width: 30px;
+  height: 17px;
+  background: #e0e0e0;
+  border-radius: 999px;
+  transition: background 200ms ease;
+  flex-shrink: 0;
+}
+
+.private-toggle input:checked + .private-toggle-track {
+  background: #1a1a1a;
+}
+
+.private-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 13px;
+  height: 13px;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0,0,0,.2);
+  transition: transform 200ms ease;
+}
+
+.private-toggle input:checked ~ .private-toggle-track .private-toggle-thumb,
+.private-toggle input:checked + .private-toggle-track .private-toggle-thumb {
+  transform: translateX(13px);
+}
+
+.private-toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.private-toggle-label {
+  font-size: .78rem;
+  color: var(--text-muted);
+  font-weight: 500;
+  transition: color 200ms;
+}
+
+.private-toggle input:checked ~ .private-toggle-label {
+  color: var(--text);
+}
+
+/* =============================================
+   PRIVATE POST CARD
+   ============================================= */
+.post-card--private {
+  background: #fffdf7;
+  border-radius: var(--radius);
+  padding-left: .75rem;
+  padding-right: .75rem;
+  margin-left: -.75rem;
+  margin-right: -.75rem;
+  border-bottom-color: #f0e8d0 !important;
+  position: relative;
+}
+
+.post-card--private::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #d4a843;
+  border-radius: 2px 0 0 2px;
+  opacity: .6;
+}
+
+.post-private-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: .7rem;
+  font-weight: 600;
+  letter-spacing: .04em;
+  color: #b8902a;
+  background: #fdf3d8;
+  border: 1px solid #f0dfa0;
+  border-radius: 999px;
+  padding: .1rem .55rem .1rem .45rem;
+  margin-left: .25rem;
+}

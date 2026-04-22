@@ -25,6 +25,8 @@ let personalities = [];
 let personalityMap = {};
 let currentUsername = '';
 let filterVersion = 0;  
+let isPrivate = false;
+
 
 /* =============================================
    LOAD PERSONALITIES
@@ -115,6 +117,13 @@ function videoHandler() {
   tooltip.edit('video');
   tooltip.textbox.placeholder = 'YouTube URL…';
 }
+
+const privateCheckbox = document.getElementById('private-checkbox');
+privateCheckbox.addEventListener('change', () => {
+  isPrivate = privateCheckbox.checked;
+});
+
+
 /* =============================================
    DRAFT AUTOSAVE
    ============================================= */
@@ -316,6 +325,7 @@ async function logoutAdmin() {
   await db.auth.signOut();
 }
 
+
 db.auth.onAuthStateChange((_event, session) => {
   const wasAdmin = isAdmin;
   isAdmin = !!session;
@@ -323,8 +333,7 @@ db.auth.onAuthStateChange((_event, session) => {
   editorSection.classList.toggle('hidden', !isAdmin);
   adminBtn.textContent = isAdmin ? 'Sign out' : 'Sign in';
   adminBtn.title        = isAdmin ? 'Sign out' : 'Sign in';
-  if (wasAdmin !== isAdmin) reRenderCurrentPosts();
-  // Restore draft when signing in
+  if (wasAdmin !== isAdmin) applyFilters();  // re-fetch, not just re-render
   if (isAdmin && !wasAdmin) restoreDraft();
 });
 
@@ -490,21 +499,26 @@ publishBtn.addEventListener('click', async () => {
       const { data: insertedPost, error } = await db.from('posts').insert([{
         content,
         tags: currentTags,
-        author: currentUsername, 
+        author: currentUsername,
+        is_private: isPrivate,
         created_at: new Date().toISOString()
       }]).select().single();
       if (error) throw error;
 
-      const postTitle = quill.getText().trim().split('\n')[0].slice(0, 80) || 'New post';
-      await notifySubscribers(postTitle, content);
+      if (!isPrivate) {
+        const postTitle = quill.getText().trim().split('\n')[0].slice(0, 80) || 'New post';
+        await notifySubscribers(postTitle, content);
+      }
 
-      scheduleAIComments(insertedPost.id, content);
+      //scheduleAIComments(insertedPost.id, content);
     }
 
     quill.setText('');
     currentTags = [];
     renderTagPills();
     clearDraft();
+    isPrivate = false;
+    privateCheckbox.checked = false;
     await applyFilters();
 
   } catch (err) {
@@ -942,20 +956,50 @@ async function buildCommentsSection(postId) {
    FETCH POSTS
    ============================================= */
 async function fetchPosts(offset, limit = PAGE_SIZE) {
-  let query = db
+  let baseQuery = db
     .from('posts')
     .select('*')
     .order('created_at', { ascending: false });
 
-  if (activeTagFilter) query = query.contains('tags', [activeTagFilter]);
+  if (activeTagFilter) baseQuery = baseQuery.contains('tags', [activeTagFilter]);
   if (searchQuery) {
     const escaped = searchQuery.replace(/[%_]/g, '\\$&');
-    query = query.filter('content', 'ilike', `%${escaped}%`);
+    baseQuery = baseQuery.filter('content', 'ilike', `%${escaped}%`);
   }
 
-  const { data, error } = await query.range(offset, offset + limit - 1);
-  if (error) throw error;
-  return data || [];
+  if (!isAdmin) {
+    // Non-admins: public posts only
+    const { data, error } = await baseQuery
+      .eq('is_private', false)
+      .range(offset, offset + limit - 1);
+    if (error) throw error;
+    return data || [];
+  }
+
+  // Admins: run two queries in parallel and merge
+  const [publicRes, privateRes] = await Promise.all([
+    baseQuery.eq('is_private', false),
+    db.from('posts').select('*')
+      .eq('is_private', true)
+      .eq('author', currentUsername)
+      .order('created_at', { ascending: false })
+  ]);
+
+  if (publicRes.error) throw publicRes.error;
+  if (privateRes.error) throw privateRes.error;
+
+  // Merge, re-sort by date, deduplicate, then paginate
+  const merged = [...(publicRes.data || []), ...(privateRes.data || [])];
+  merged.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+  const seen = new Set();
+  const deduped = merged.filter(p => {
+    if (seen.has(p.id)) return false;
+    seen.add(p.id);
+    return true;
+  });
+
+  return deduped.slice(offset, offset + limit);
 }
 
 /* =============================================
@@ -1027,13 +1071,25 @@ async function loadNextPage(isInitial = false, expectedVersion = null) {
       return;
     }
 
+    const prevCount = loadedPosts.length;
     loadedPosts.push(...newPosts);
 
-    for (const post of newPosts) {
+    // Deduplicate in place
+    const seen = new Set();
+    loadedPosts = loadedPosts.filter(p => {
+      if (seen.has(p.id)) return false;
+      seen.add(p.id);
+      return true;
+    });
+
+    // Render only what's genuinely new after dedup
+    const postsToRender = loadedPosts.slice(prevCount);
+
+    for (const post of postsToRender) {
       const card = buildPostCard(post);
       const commentsSection = await buildCommentsSection(post.id);
       if (commentsSection) card.appendChild(commentsSection);
-      postsFeed.appendChild(card); 
+      postsFeed.appendChild(card);
       applyPostTruncation(card);
       if (!commentsSection && isAdmin && currentUsername === post.author) {
         showRegenerateButton(post.id, post.content || '');
@@ -1142,9 +1198,12 @@ function applyPostTruncation(card) {
   const bodyEl  = card.querySelector('.post-body');
   if (!wrap || !overlay || !bodyEl) return;
 
+  // Threshold must match the max-height in CSS (.post-body-wrap--collapsible .post-body)
+  const THRESHOLD = 300;
+
   function check() {
-    if (!overlay.isConnected) return; // already removed by "Read more"
-    if (bodyEl.scrollHeight <= 500) {
+    if (!overlay.isConnected) return;
+    if (bodyEl.scrollHeight <= THRESHOLD) {
       overlay.remove();
       wrap.classList.remove('post-body-wrap--collapsible');
     } else {
@@ -1152,13 +1211,13 @@ function applyPostTruncation(card) {
     }
   }
 
-  // Initial check
-  check();
+  // Defer so the browser has painted and computed layout
+  requestAnimationFrame(() => {
+    requestAnimationFrame(check);   // double rAF guarantees post-layout
+  });
 
-  // Re-check after each image in the post finishes loading
-  // (lazy images load after the DOM is painted, inflating scrollHeight)
   bodyEl.querySelectorAll('img').forEach(img => {
-    if (img.complete) return; // already loaded, no need to wait
+    if (img.complete) return;
     img.addEventListener('load',  check, { once: true });
     img.addEventListener('error', check, { once: true });
   });
@@ -1166,7 +1225,7 @@ function applyPostTruncation(card) {
 
 function buildPostCard(post) {
   const card = document.createElement('article');
-  card.className  = 'post-card';
+  card.className  = `post-card${post.is_private ? ' post-card--private' : ''}`;
   card.dataset.id = post.id;
 
   const dateStr = new Date(post.created_at).toLocaleDateString('en-US', {
@@ -1175,6 +1234,17 @@ function buildPostCard(post) {
 
   const tags = Array.isArray(post.tags) ? post.tags : [];
   const author = post.author || 'anonymous';
+
+  const privacyBadge = post.is_private
+  ? `<span class="post-private-badge" title="Only visible to you">
+       <svg width="10" height="10" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+         <rect x="2" y="5" width="8" height="6" rx="1.5" stroke="currentColor" stroke-width="1.3"/>
+         <path d="M4 5V3.5a2 2 0 1 1 4 0V5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+       </svg>
+       Private
+     </span>`
+  : '';
+
   let metaHtml = `
     <div class="post-meta">
       <div class="post-meta-left">
@@ -1183,6 +1253,7 @@ function buildPostCard(post) {
           ${author}
         </span>
         <span class="post-date">${dateStr}</span>
+        ${privacyBadge}
       </div>
       <div class="post-meta-tags">
   `;
@@ -1706,4 +1777,8 @@ document.getElementById('posts-feed').addEventListener('click', (e) => {
 /* =============================================
    INIT
    ============================================= */
-loadPersonalities().then(() => applyFilters());
+loadPersonalities();
+
+db.auth.getSession().then(() => {
+  applyFilters();
+});
