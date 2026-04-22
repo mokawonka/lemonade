@@ -510,7 +510,7 @@ publishBtn.addEventListener('click', async () => {
         await notifySubscribers(postTitle, content);
       }
 
-      //scheduleAIComments(insertedPost.id, content);
+      scheduleAIComments(insertedPost.id, content);
     }
 
     quill.setText('');
