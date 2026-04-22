@@ -1088,6 +1088,54 @@ function optimizeImages(html) {
   return div.innerHTML;
 }
 
+/**
+ * Quill stores indented list items as flat <li class="ql-indent-N"> elements.
+ * This converts them into proper nested <ul>/<ol> trees so CSS counters work.
+ */
+function normalizeQuillLists(html) {
+  const div = document.createElement('div');
+  div.innerHTML = html;
+
+  div.querySelectorAll('ul, ol').forEach(list => {
+    const items = [...list.querySelectorAll(':scope > li')];
+    if (!items.length) return;
+
+    // Build a nested structure from flat ql-indent-N items
+    const root = document.createElement(list.tagName);
+    const stack = [root]; // stack[i] = the <ul>/<ol> at depth i
+
+    items.forEach(li => {
+      // Determine depth from class (ql-indent-1 → depth 1, none → depth 0)
+      const match = [...li.classList].join(' ').match(/ql-indent-(\d+)/);
+      const depth = match ? parseInt(match[1]) : 0;
+
+      // Trim stack down to current depth
+      while (stack.length > depth + 1) stack.pop();
+
+      // If we need to go deeper, create a new nested list
+      while (stack.length < depth + 1) {
+        const nested = document.createElement(list.tagName);
+        const parent = stack[stack.length - 1];
+        const lastLi = parent.lastElementChild;
+        if (lastLi) {
+          lastLi.appendChild(nested);
+        } else {
+          parent.appendChild(nested);
+        }
+        stack.push(nested);
+      }
+
+      const cleanLi = li.cloneNode(true);
+      cleanLi.classList.remove(...[...cleanLi.classList].filter(c => c.startsWith('ql-indent')));
+      stack[stack.length - 1].appendChild(cleanLi);
+    });
+
+    list.replaceWith(root);
+  });
+
+  return div.innerHTML;
+}
+
 function applyPostTruncation(card) {
   const wrap    = card.querySelector('.post-body-wrap');
   const overlay = card.querySelector('.post-fade-overlay');
@@ -1145,6 +1193,7 @@ function buildPostCard(post) {
   metaHtml += `</div></div>`;
 
   let bodyHtml = post.content || '';
+  bodyHtml = normalizeQuillLists(bodyHtml);
   bodyHtml = optimizeImages(bodyHtml);
   if (searchQuery) bodyHtml = highlightText(bodyHtml, searchQuery);
 
