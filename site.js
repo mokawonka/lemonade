@@ -1807,7 +1807,11 @@ shareModalClose.addEventListener('click', closeShareModal);
 shareModal.addEventListener('click', e => { if (e.target === shareModal) closeShareModal(); });
 
 function openShareModal(postId) {
-  const url = `${location.origin}/post/${postId}`;
+  const SITE_BASE = location.hostname === 'mokawonka.github.io'
+  ? `${location.origin}/lemonade`
+  : location.origin;
+
+  const url = `${SITE_BASE}/post/${postId}`;
   shareUrlInput.value = url;
   shareCopyLabel.textContent = 'Copy';
   shareCopyIcon.innerHTML = `
@@ -1936,7 +1940,7 @@ loadPersonalities();
 
 db.auth.getSession().then(() => {
   // Check if we're on a /post/{id} route
-  const match = location.pathname.match(/^\/post\/([a-f0-9-]{36})$/i);
+  const match = location.pathname.match(/(?:^|\/)post\/([a-f0-9-]{36})$/i);
   if (match) {
     renderSinglePost(match[1]);
   } else {
