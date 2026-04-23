@@ -641,15 +641,20 @@ function scheduleAIComments(postId, postHtml) {
         const data = await res.json();
 
         if (data.transcript) {
-          console.log(`[YouTube] Transcript received for: "${data.title}"`);
-          // Prepend transcript to post text so Gemini has full context
-          postText = `[Video transcript: "${data.title}"]\n\n${data.transcript}\n\n[Post content]\n${postText}`;
+          console.log(`[YouTube] Transcript received`);
+          postText = `[Video transcript]\n\n${data.transcript}\n\n[Post content]\n${postText}`;
         } else {
-          console.warn('[YouTube] No transcript returned, falling back to post text');
+          // No transcript available — show message and abort
+          hideCommentsStatus(postId);
+          showCommentsStatus(postId, 'no-transcript');
+          return;
         }
 
       } catch (err) {
-        console.warn('[YouTube] Transcript fetch failed, falling back to post text:', err);
+        console.warn('[YouTube] Transcript fetch failed:', err);
+        hideCommentsStatus(postId);
+        showCommentsStatus(postId, 'no-transcript');
+        return;
       }
     }
 
@@ -1199,7 +1204,7 @@ function applyPostTruncation(card) {
   if (!wrap || !overlay || !bodyEl) return;
 
   // Threshold must match the max-height in CSS (.post-body-wrap--collapsible .post-body)
-  const THRESHOLD = 300;
+  const THRESHOLD = 500;
 
   function check() {
     if (!overlay.isConnected) return;
