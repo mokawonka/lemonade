@@ -1270,12 +1270,28 @@ function buildPostCard(post) {
 
   const isOwner = isAdmin && currentUsername === post.author;
 
+  const shareBtn = !post.is_private
+    ? `<button class="btn-share" data-id="${post.id}" title="Share post">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="18" cy="5" r="3" stroke="currentColor" stroke-width="1.8"/>
+          <circle cx="6" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/>
+          <circle cx="18" cy="19" r="3" stroke="currentColor" stroke-width="1.8"/>
+          <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        </svg>
+        Share
+      </button>`
+    : '';
+
   const adminBar = isOwner
     ? `<div class="post-admin-bar">
+        ${shareBtn}
         <button class="btn-edit" data-id="${post.id}">Edit post</button>
         <button class="btn-delete" data-id="${post.id}">Delete post</button>
       </div>`
-    : '';
+    : shareBtn
+      ? `<div class="post-admin-bar">${shareBtn}</div>`
+      : '';
 
   card.innerHTML = metaHtml + `
   <div class="post-body-wrap">
@@ -1302,6 +1318,8 @@ function buildPostCard(post) {
 
   card.querySelector('.btn-delete')?.addEventListener('click', () => deletePost(post.id));
   card.querySelector('.btn-edit')?.addEventListener('click', () => editPost(post));
+  card.querySelector('.btn-share')?.addEventListener('click', () => openShareModal(post.id));
+
 
   return card;
 }
@@ -1774,11 +1792,154 @@ document.getElementById('posts-feed').addEventListener('click', (e) => {
   }
 });
 
+
+/* =============================================
+   SHARE MODAL
+   ============================================= */
+const shareModal     = document.getElementById('share-modal');
+const shareModalClose = document.getElementById('share-modal-close');
+const shareUrlInput  = document.getElementById('share-url-input');
+const shareCopyBtn   = document.getElementById('share-copy-btn');
+const shareCopyLabel = document.getElementById('share-copy-label');
+const shareCopyIcon  = document.getElementById('share-copy-icon');
+
+shareModalClose.addEventListener('click', closeShareModal);
+shareModal.addEventListener('click', e => { if (e.target === shareModal) closeShareModal(); });
+
+function openShareModal(postId) {
+  const url = `${location.origin}/post/${postId}`;
+  shareUrlInput.value = url;
+  shareCopyLabel.textContent = 'Copy';
+  shareCopyIcon.innerHTML = `
+    <rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" stroke-width="1.7"/>
+    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+  `;
+  shareCopyBtn.classList.remove('copied');
+  shareModal.classList.remove('hidden');
+  setTimeout(() => shareUrlInput.select(), 80);
+}
+
+function closeShareModal() {
+  shareModal.classList.add('hidden');
+}
+
+shareCopyBtn.addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(shareUrlInput.value);
+  } catch {
+    shareUrlInput.select();
+    document.execCommand('copy');
+  }
+  shareCopyLabel.textContent = 'Copied!';
+  shareCopyBtn.classList.add('copied');
+  shareCopyIcon.innerHTML = `
+    <polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+  `;
+  setTimeout(() => {
+    shareCopyLabel.textContent = 'Copy';
+    shareCopyBtn.classList.remove('copied');
+    shareCopyIcon.innerHTML = `
+      <rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" stroke-width="1.7"/>
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+    `;
+  }, 2000);
+});
+
+
+/* =============================================
+   SINGLE POST VIEW
+   ============================================= */
+async function renderSinglePost(postId) {
+  // Hide feed UI, show a clean single-post layout
+  document.getElementById('editor-section')?.classList.add('hidden');
+  document.getElementById('subscribe-section')?.classList.add('hidden');
+  document.getElementById('load-more-wrap')?.classList.add('hidden');
+
+  const navbar = document.getElementById('navbar');
+  if (navbar) {
+    // Simplify navbar: just home link, no search/admin
+    navbar.querySelector('.nav-right').innerHTML = `
+      <a href="${location.origin}" class="btn-ghost btn-sm" style="text-decoration:none;">← All posts</a>
+    `;
+  }
+
+  const feed = document.getElementById('posts-feed');
+  feed.innerHTML = '';
+
+  const loading = document.getElementById('posts-loading');
+  loading.classList.remove('hidden');
+
+  try {
+    const { data: post, error } = await db
+      .from('posts')
+      .select('*')
+      .eq('id', postId)
+      .eq('is_private', false)
+      .single();
+
+    loading.classList.add('hidden');
+
+    if (error || !post) {
+      feed.innerHTML = `<p style="text-align:center;padding:3rem;color:#aaa;">Post not found.</p>`;
+      return;
+    }
+
+    const card = buildPostCard(post);
+
+    // Remove truncation — show full post
+    card.querySelector('.post-body-wrap')?.classList.remove('post-body-wrap--collapsible');
+    card.querySelector('.post-fade-overlay')?.remove();
+
+    // Remove admin bar / share button in single view
+    card.querySelector('.post-admin-bar')?.remove();
+
+    feed.appendChild(card);
+
+    // Load comments expanded
+    const comments = await fetchComments(postId);
+    if (comments.length) {
+      const wrapper = document.createElement('div');
+
+      const toggle = document.createElement('button');
+      toggle.className = 'comments-toggle open';
+      toggle.innerHTML = `
+        <span class="comments-toggle-label">Programs comments</span>
+        <span class="comments-toggle-count">(${comments.length})</span>
+        <span class="comments-toggle-arrow">▼</span>
+      `;
+
+      const section = document.createElement('div');
+      section.className = 'comments-section open';
+      comments.forEach(c => section.appendChild(buildCommentEl(c)));
+
+      toggle.addEventListener('click', () => {
+        const isOpen = section.classList.toggle('open');
+        toggle.classList.toggle('open', isOpen);
+      });
+
+      wrapper.appendChild(toggle);
+      wrapper.appendChild(section);
+      card.appendChild(wrapper);
+    }
+
+  } catch (err) {
+    loading.classList.add('hidden');
+    console.error('Single post load error:', err);
+    feed.innerHTML = `<p style="text-align:center;padding:3rem;color:#aaa;">Failed to load post.</p>`;
+  }
+}
+
 /* =============================================
    INIT
    ============================================= */
 loadPersonalities();
 
 db.auth.getSession().then(() => {
-  applyFilters();
+  // Check if we're on a /post/{id} route
+  const match = location.pathname.match(/^\/post\/([a-f0-9-]{36})$/i);
+  if (match) {
+    renderSinglePost(match[1]);
+  } else {
+    applyFilters();
+  }
 });
