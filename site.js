@@ -1863,7 +1863,7 @@ async function renderSinglePost(postId) {
   if (navbar) {
     // Simplify navbar: just home link, no search/admin
     navbar.querySelector('.nav-right').innerHTML = `
-      <a href="${location.origin}" class="btn-ghost btn-sm" style="text-decoration:none;">← All posts</a>
+      <a href="/lemonade/" class="btn-ghost btn-sm" style="text-decoration:none;">← All posts</a>
     `;
   }
 
@@ -1939,9 +1939,18 @@ async function renderSinglePost(postId) {
 loadPersonalities();
 
 db.auth.getSession().then(() => {
-  // Check if we're on a /post/{id} route
-  const match = location.pathname.match(/(?:^|\/)post\/([a-f0-9-]{36})$/i);
+  // GitHub Pages 404 redirect lands here as ?p=/post/{guid}
+  const redirected = new URLSearchParams(location.search).get('p');
+  const pathToCheck = redirected
+    ? decodeURIComponent(redirected)
+    : location.pathname;
+
+  const match = pathToCheck.match(/(?:^|\/)post\/([a-f0-9-]{36})$/i);
   if (match) {
+    // Clean up the ugly ?p=... from the address bar (no page reload)
+    if (redirected) {
+      history.replaceState(null, '', '/lemonade/post/' + match[1]);
+    }
     renderSinglePost(match[1]);
   } else {
     applyFilters();
