@@ -1203,7 +1203,6 @@ function applyPostTruncation(card) {
   const bodyEl  = card.querySelector('.post-body');
   if (!wrap || !overlay || !bodyEl) return;
 
-  // Threshold must match the max-height in CSS (.post-body-wrap--collapsible .post-body)
   const THRESHOLD = 500;
 
   function check() {
@@ -1216,15 +1215,28 @@ function applyPostTruncation(card) {
     }
   }
 
-  // Defer so the browser has painted and computed layout
+  // Staggered checks to catch layout settling at different stages
   requestAnimationFrame(() => {
-    requestAnimationFrame(check);   // double rAF guarantees post-layout
+    requestAnimationFrame(() => {
+      check();
+      setTimeout(check, 100);
+      setTimeout(check, 500);
+      setTimeout(check, 1500);
+    });
   });
 
+  // Always attach load listeners regardless of img.complete
+  // (cached images can have complete=true but layout not yet updated)
   bodyEl.querySelectorAll('img').forEach(img => {
-    if (img.complete) return;
     img.addEventListener('load',  check, { once: true });
     img.addEventListener('error', check, { once: true });
+
+    // Force a reload cycle for already-complete images so layout is guaranteed
+    if (img.complete && img.naturalWidth > 0) {
+      const src = img.src;
+      img.src = '';
+      requestAnimationFrame(() => { img.src = src; });
+    }
   });
 }
 
