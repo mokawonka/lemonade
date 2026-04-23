@@ -1,0 +1,12 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script>
+    // Encode the full path into a query param and redirect to index
+    const path = location.pathname.replace('/lemonade', '') + location.search;
+    location.replace('/lemonade/?p=' + encodeURIComponent(path));
+  </script>
+</head>
+<body></body>
+</html>
