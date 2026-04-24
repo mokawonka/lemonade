@@ -1953,29 +1953,35 @@ async function renderSinglePost(postId) {
   }
 }
 
-/* =============================================
-   INIT
-   ============================================= */
+// =============================================
+//  INIT  — detect single-post view synchronously
+// =============================================
+const _redirected = new URLSearchParams(location.search).get('p');
+const _candidates = [
+  _redirected ? decodeURIComponent(_redirected) : null,
+  location.pathname,
+  location.search
+].filter(Boolean);
+
+for (const candidate of _candidates) {
+  if (/\/post\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/i.test(candidate)) {
+    isSinglePostView = true;
+    break;
+  }
+}
+
 loadPersonalities();
 
 db.auth.getSession().then(() => {
-  const redirected = new URLSearchParams(location.search).get('p');
-  
-  // Check both the ?p= redirect AND location.pathname directly
-  const candidates = [
-    redirected ? decodeURIComponent(redirected) : null,
-    location.pathname,
-    location.search  // fallback in case the ID ends up here
-  ].filter(Boolean);
-
+  // re-use the candidates already computed above
   let match = null;
-  for (const candidate of candidates) {
+  for (const candidate of _candidates) {
     match = candidate.match(/\/post\/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
     if (match) break;
   }
 
   if (match) {
-    if (redirected) {
+    if (_redirected) {
       history.replaceState(null, '', '/lemonade/post/' + match[1]);
     }
     renderSinglePost(match[1]);
