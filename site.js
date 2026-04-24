@@ -26,7 +26,7 @@ let personalityMap = {};
 let currentUsername = '';
 let filterVersion = 0;  
 let isPrivate = false;
-
+let isSinglePostView = false;
 
 /* =============================================
    LOAD PERSONALITIES
@@ -333,8 +333,8 @@ db.auth.onAuthStateChange((_event, session) => {
   editorSection.classList.toggle('hidden', !isAdmin);
   adminBtn.textContent = isAdmin ? 'Sign out' : 'Sign in';
   adminBtn.title        = isAdmin ? 'Sign out' : 'Sign in';
-  if (wasAdmin !== isAdmin) applyFilters();  // re-fetch, not just re-render
-  if (isAdmin && !wasAdmin) restoreDraft();
+  if (wasAdmin !== isAdmin && !isSinglePostView) applyFilters();
+  if (isAdmin && !wasAdmin && !isSinglePostView) restoreDraft();
 });
 
 /* =============================================
@@ -1871,6 +1871,7 @@ shareCopyBtn.addEventListener('click', async () => {
    SINGLE POST VIEW
    ============================================= */
 async function renderSinglePost(postId) {
+  isSinglePostView = true; 
   // Hide feed UI, show a clean single-post layout
   document.getElementById('editor-section')?.classList.add('hidden');
   document.getElementById('subscribe-section')?.classList.add('hidden');
