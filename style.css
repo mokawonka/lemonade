@@ -791,7 +791,7 @@ input[type="search"]::-webkit-search-cancel-button {
 }
 
 .comments-section.open {
-  max-height: 2000px;
+  max-height: 20000px;
   opacity: 1;
 }
 
