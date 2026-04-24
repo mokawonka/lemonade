@@ -1011,6 +1011,8 @@ async function fetchPosts(offset, limit = PAGE_SIZE) {
    FILTER + SEARCH + PAGINATION
    ============================================= */
 async function applyFilters() {
+  if (isSinglePostView) return; 
+  
   const version = ++filterVersion;  
 
   loadedPosts  = [];
