@@ -330,7 +330,7 @@ db.auth.onAuthStateChange((_event, session) => {
   const wasAdmin = isAdmin;
   isAdmin = !!session;
   currentUsername = session?.user?.email?.split('@')[0] || '';
-  editorSection.classList.toggle('hidden', !isAdmin);
+  editorSection.classList.toggle('hidden', !isAdmin || isSinglePostView);
   adminBtn.textContent = isAdmin ? 'Sign out' : 'Sign in';
   adminBtn.title        = isAdmin ? 'Sign out' : 'Sign in';
   if (wasAdmin !== isAdmin && !isSinglePostView) applyFilters();
