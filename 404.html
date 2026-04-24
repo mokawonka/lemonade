@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <script>
     // Encode the full path into a query param and redirect to index
-    const path = location.pathname.replace('/lemonade', '') + location.search;
+    const path = location.pathname + location.search;
     location.replace('/lemonade/?p=' + encodeURIComponent(path));
   </script>
 </head>

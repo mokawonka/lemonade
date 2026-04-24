@@ -1878,9 +1878,9 @@ async function renderSinglePost(postId) {
 
   const navbar = document.getElementById('navbar');
   if (navbar) {
-    // Simplify navbar: just home link, no search/admin
+    // In renderSinglePost, replace the navbar innerHTML with:
     navbar.querySelector('.nav-right').innerHTML = `
-      <a href="/lemonade/" class="btn-ghost btn-sm" style="text-decoration:none;">← All posts</a>
+      <a href="${location.origin}/lemonade/" class="btn-ghost btn-sm" style="text-decoration:none;">← All posts</a>
     `;
   }
 
@@ -1956,15 +1956,22 @@ async function renderSinglePost(postId) {
 loadPersonalities();
 
 db.auth.getSession().then(() => {
-  // GitHub Pages 404 redirect lands here as ?p=/post/{guid}
   const redirected = new URLSearchParams(location.search).get('p');
-  const pathToCheck = redirected
-    ? decodeURIComponent(redirected)
-    : location.pathname;
+  
+  // Check both the ?p= redirect AND location.pathname directly
+  const candidates = [
+    redirected ? decodeURIComponent(redirected) : null,
+    location.pathname,
+    location.search  // fallback in case the ID ends up here
+  ].filter(Boolean);
 
-  const match = pathToCheck.match(/(?:^|\/)post\/([a-f0-9-]{36})$/i);
+  let match = null;
+  for (const candidate of candidates) {
+    match = candidate.match(/\/post\/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
+    if (match) break;
+  }
+
   if (match) {
-    // Clean up the ugly ?p=... from the address bar (no page reload)
     if (redirected) {
       history.replaceState(null, '', '/lemonade/post/' + match[1]);
     }
