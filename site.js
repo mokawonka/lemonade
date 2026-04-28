@@ -27,6 +27,8 @@ let currentUsername = '';
 let filterVersion = 0;  
 let isPrivate = false;
 let isSinglePostView = false;
+let noAiComments = false;
+
 
 /* =============================================
    LOAD PERSONALITIES
@@ -121,6 +123,11 @@ function videoHandler() {
 const privateCheckbox = document.getElementById('private-checkbox');
 privateCheckbox.addEventListener('change', () => {
   isPrivate = privateCheckbox.checked;
+});
+
+const noAiCheckbox = document.getElementById('no-ai-checkbox');
+noAiCheckbox.addEventListener('change', () => {
+  noAiComments = noAiCheckbox.checked;
 });
 
 
@@ -501,16 +508,19 @@ publishBtn.addEventListener('click', async () => {
         tags: currentTags,
         author: currentUsername,
         is_private: isPrivate,
+        no_ai: noAiComments,
         created_at: new Date().toISOString()
       }]).select().single();
       if (error) throw error;
 
       if (!isPrivate) {
         const postTitle = quill.getText().trim().split('\n')[0].slice(0, 80) || 'New post';
-        await notifySubscribers(postTitle, content);
+        // await notifySubscribers(postTitle, content);
       }
 
-      scheduleAIComments(insertedPost.id, content);
+      if (!insertedPost.no_ai) {
+        scheduleAIComments(insertedPost.id, content);
+      }
     }
 
     quill.setText('');
@@ -519,6 +529,8 @@ publishBtn.addEventListener('click', async () => {
     clearDraft();
     isPrivate = false;
     privateCheckbox.checked = false;
+    noAiComments = false;
+    noAiCheckbox.checked = false;
     await applyFilters();
 
   } catch (err) {
@@ -1098,7 +1110,7 @@ async function loadNextPage(isInitial = false, expectedVersion = null) {
       if (commentsSection) card.appendChild(commentsSection);
       postsFeed.appendChild(card);
       applyPostTruncation(card);
-      if (!commentsSection && isAdmin && currentUsername === post.author) {
+      if (!commentsSection && !post.no_ai && isAdmin && currentUsername === post.author) {
         showRegenerateButton(post.id, post.content || '');
       }
     }
@@ -1128,7 +1140,7 @@ async function reRenderCurrentPosts() {
     if (commentsSection) card.appendChild(commentsSection);
     postsFeed.appendChild(card); 
     applyPostTruncation(card);
-    if (!commentsSection && isAdmin && currentUsername === post.author) {
+    if (!commentsSection && !post.no_ai && isAdmin && currentUsername === post.author) {
       showRegenerateButton(post.id, post.content || '');
     }
   }

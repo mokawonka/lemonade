@@ -1354,7 +1354,7 @@ input[type="search"]::-webkit-search-cancel-button {
 /* =============================================
    PRIVATE MODE TOGGLE
    ============================================= */
-.private-toggle {
+.editor-toggle {
   display: inline-flex;
   align-items: center;
   gap: .5rem;
@@ -1363,7 +1363,7 @@ input[type="search"]::-webkit-search-cancel-button {
   margin-right: auto;
 }
 
-.private-toggle-track {
+.toggle-track {
   position: relative;
   width: 30px;
   height: 17px;
@@ -1373,11 +1373,11 @@ input[type="search"]::-webkit-search-cancel-button {
   flex-shrink: 0;
 }
 
-.private-toggle input:checked + .private-toggle-track {
+.editor-toggle input:checked + .toggle-track {
   background: #1a1a1a;
 }
 
-.private-toggle-thumb {
+.toggle-thumb {
   position: absolute;
   top: 2px;
   left: 2px;
@@ -1389,26 +1389,26 @@ input[type="search"]::-webkit-search-cancel-button {
   transition: transform 200ms ease;
 }
 
-.private-toggle input:checked ~ .private-toggle-track .private-toggle-thumb,
-.private-toggle input:checked + .private-toggle-track .private-toggle-thumb {
+.editor-toggle input:checked ~ .toggle-track .toggle-thumb,
+.editor-toggle input:checked + .toggle-track .toggle-thumb {
   transform: translateX(13px);
 }
 
-.private-toggle input {
+.editor-toggle input {
   position: absolute;
   opacity: 0;
   width: 0;
   height: 0;
 }
 
-.private-toggle-label {
+.toggle-label {
   font-size: .78rem;
   color: var(--text-muted);
   font-weight: 500;
   transition: color 200ms;
 }
 
-.private-toggle input:checked ~ .private-toggle-label {
+.editor-toggle input:checked ~ .toggle-label {
   color: var(--text);
 }
 

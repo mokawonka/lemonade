@@ -61,13 +61,23 @@
           <input id="tag-input" type="text" placeholder="Add a tag, press Enter…">
         </div>
         <div id="editor-actions">
-          <label class="private-toggle" id="private-toggle-wrap" title="Only you can see this post when logged in">
+
+          <label class="editor-toggle" title="Only you can see this post when logged in">
             <input type="checkbox" id="private-checkbox">
-            <span class="private-toggle-track">
-              <span class="private-toggle-thumb"></span>
+            <span class="toggle-track">
+              <span class="toggle-thumb"></span>
             </span>
-            <span class="private-toggle-label">Private</span>
+            <span class="toggle-label">Private</span>
           </label>
+
+          <label class="editor-toggle" title="Disable AI comments for this post">
+            <input type="checkbox" id="no-ai-checkbox">
+            <span class="toggle-track">
+              <span class="toggle-thumb"></span>
+            </span>
+            <span class="toggle-label">No AI comments</span>
+          </label>
+
           <button id="publish-btn" class="btn-primary">Publish</button>
         </div>
       </div>
