@@ -1953,6 +1953,231 @@ async function renderSinglePost(postId) {
   }
 }
 
+/* =============================================
+   DETERMINISTIC TITLE EXTRACTION
+   No API call. Pure heuristic from post HTML.
+   Supports French and English.
+   ============================================= */
+
+function extractTitleFromHtml(html) {
+  const div = document.createElement('div');
+  div.innerHTML = html;
+
+  // Measure meaningful text (excluding media elements)
+  const clone = div.cloneNode(true);
+  clone.querySelectorAll('img, iframe, video, figure').forEach(el => el.remove());
+  const plainText = clone.textContent.trim();
+
+  // 1. Post has no meaningful text — classify by media type first
+  if (plainText.length < 6) {
+    if (div.querySelector('iframe[src*="youtube.com/embed"]')) return 'YouTube video';
+    if (div.querySelector('img')) return 'Image';
+    return 'Untitled';
+  }
+
+  // 2. Prefer an explicit heading (h1, h2, h3)
+  const heading = div.querySelector('h1, h2, h3');
+  if (heading) {
+    const t = heading.textContent.trim();
+    if (t.length >= 6) return cleanTitle(t);
+  }
+
+  // 3. Prefer a <strong> or <b> that opens the first paragraph
+  const firstStrong = div.querySelector('p strong, p b');
+  if (firstStrong) {
+    const t = firstStrong.textContent.trim();
+    if (t.length >= 6 && t.length <= 120) return cleanTitle(t);
+  }
+
+  // 4. First non-empty block of text (media already stripped in clone above)
+  const blocks = clone.querySelectorAll('p, li, blockquote');
+  for (const block of blocks) {
+    const text = block.textContent.trim();
+    if (text.length >= 20) return smartTruncate(text);
+  }
+
+  // 5. Fallback: full plaintext
+  if (plainText.length >= 6) return smartTruncate(plainText);
+
+  return 'Untitled';
+}
+
+/**
+ * Strip leading/trailing punctuation and collapse whitespace.
+ */
+function cleanTitle(str) {
+  return str
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s\-–—:•·]+/, '')
+    .replace(/[\s\-–—:•·]+$/, '')
+    .trim();
+}
+
+/**
+ * Truncate a long text to a title-sized snippet.
+ * Cuts at the first sentence boundary (. ! ?) within 80 chars,
+ * or at the last word boundary before 80 chars.
+ * Language-agnostic: works for French and English.
+ */
+function smartTruncate(text) {
+  const MAX = 80;
+  text = cleanTitle(text);
+
+  if (text.length <= MAX) return text;
+
+  const sub = text.slice(0, MAX);
+
+  // Cut at a sentence end found reasonably deep in the text
+  const sentenceEnd = sub.search(/[.!?…]/);
+  if (sentenceEnd >= 20) {
+    return cleanTitle(text.slice(0, sentenceEnd));
+  }
+
+  // Cut at last word boundary
+  const wordBoundary = sub.lastIndexOf(' ');
+  if (wordBoundary > 20) {
+    return cleanTitle(text.slice(0, wordBoundary)) + '…';
+  }
+
+  return sub.trim() + '…';
+}
+
+
+
+/* =============================================
+   RIGHT-SIDE POSTS NAVIGATOR PANEL
+   ============================================= */
+
+const TITLE_PAGE_SIZE = 20;
+let titlePanelOffset  = 0;
+let titlePanelHasMore = true;
+let titlePanelLoading = false;
+
+function buildPanel() {
+  if (document.getElementById('posts-nav-panel')) return;
+
+  const panel = document.createElement('aside');
+  panel.id = 'posts-nav-panel';
+  panel.setAttribute('aria-label', 'All posts');
+  panel.innerHTML = `
+    <div class="pnp-inner">
+      <div class="pnp-header">
+        <span class="pnp-label">All posts</span>
+        <div class="pnp-rule"></div>
+      </div>
+      <ul class="pnp-list" id="pnp-list" role="list"></ul>
+      <div class="pnp-footer hidden" id="pnp-footer">
+        <button class="pnp-load-more" id="pnp-load-more">Load more</button>
+      </div>
+      <p class="pnp-empty hidden" id="pnp-empty">No posts yet.</p>
+    </div>
+  `;
+  document.body.appendChild(panel);
+
+  document.getElementById('pnp-load-more').addEventListener('click', loadMorePanelTitles);
+
+  loadMorePanelTitles();
+}
+
+async function loadMorePanelTitles() {
+  if (titlePanelLoading || !titlePanelHasMore) return;
+  titlePanelLoading = true;
+
+  const btn    = document.getElementById('pnp-load-more');
+  const list   = document.getElementById('pnp-list');
+  const empty  = document.getElementById('pnp-empty');
+  const footer = document.getElementById('pnp-footer');
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Loading…'; }
+
+  try {
+    const { data, error } = await db
+      .from('posts')
+      .select('id, content, created_at')
+      .eq('is_private', false)
+      .order('created_at', { ascending: false })
+      .range(titlePanelOffset, titlePanelOffset + TITLE_PAGE_SIZE - 1);
+
+    if (error) throw error;
+
+    if (!data || data.length === 0) {
+      if (titlePanelOffset === 0) empty?.classList.remove('hidden');
+      titlePanelHasMore = false;
+      footer?.classList.add('hidden');
+      return;
+    }
+
+    // Always use the GitHub Pages base — works on both localhost and production
+    const SITE_BASE = 'https://mokawonka.github.io/lemonade';
+
+    // Detect active post ID from URL
+    const currentPostId = (() => {
+      const m = location.pathname.match(
+        /\/post\/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i
+      );
+      return m ? m[1] : null;
+    })();
+
+    data.forEach((post, i) => {
+      const title    = extractTitleFromHtml(post.content || '');
+      const href     = `${SITE_BASE}/post/${post.id}`;
+      const isActive = post.id === currentPostId;
+
+      const dateStr = new Date(post.created_at).toLocaleDateString('en-US', {
+        month: 'short', day: 'numeric', year: 'numeric'
+      });
+
+      const li = document.createElement('li');
+      li.className = 'pnp-item';
+      li.style.animationDelay = `${i * 30}ms`;
+
+      const a = document.createElement('a');
+      a.className = 'pnp-link' + (isActive ? ' pnp-link--active' : '');
+      a.href  = href;
+      a.title = title;
+      a.innerHTML = `
+        <span class="pnp-dot"></span>
+        <span class="pnp-text">
+          <span class="pnp-title">${escapeHtml(title)}</span>
+          <span class="pnp-date">${dateStr}</span>
+        </span>
+      `;
+
+      li.appendChild(a);
+      list?.appendChild(li);
+    });
+
+    titlePanelOffset += data.length;
+    titlePanelHasMore = data.length === TITLE_PAGE_SIZE;
+
+    if (titlePanelHasMore) {
+      footer?.classList.remove('hidden');
+      if (btn) { btn.disabled = false; btn.textContent = 'Load more'; }
+    } else {
+      footer?.classList.add('hidden');
+    }
+
+  } catch (err) {
+    console.error('[Panel] load error:', err);
+    if (btn) { btn.disabled = false; btn.textContent = 'Retry'; }
+  } finally {
+    titlePanelLoading = false;
+  }
+}
+
+/* Refresh after a new post is published */
+function refreshPanel() {
+  titlePanelOffset  = 0;
+  titlePanelHasMore = true;
+  const list   = document.getElementById('pnp-list');
+  const footer = document.getElementById('pnp-footer');
+  const btn    = document.getElementById('pnp-load-more');
+  if (list)   list.innerHTML = '';
+  if (footer) footer.classList.add('hidden');
+  if (btn)    btn.textContent = 'Load more';
+  loadMorePanelTitles();
+}
+
 // =============================================
 //  INIT  — detect single-post view synchronously
 // =============================================
@@ -1971,6 +2196,9 @@ for (const candidate of _candidates) {
 }
 
 loadPersonalities();
+
+buildPanel();
+
 
 db.auth.getSession().then(() => {
   // re-use the candidates already computed above

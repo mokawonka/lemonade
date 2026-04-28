@@ -1587,3 +1587,189 @@ input[type="search"]::-webkit-search-cancel-button {
 .share-copy-btn.copied {
   background: #1a7f4b;
 }
+
+
+/* =============================================
+   RIGHT-SIDE POSTS NAVIGATOR PANEL
+   Fixed column, full viewport height below nav.
+   Hidden on screens narrower than 1200px.
+   ============================================= */
+
+#posts-nav-panel {
+  position: fixed;
+  top: var(--nav-h);
+  right: 0;
+  width: 224px;
+  height: calc(100vh - var(--nav-h));
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+  z-index: 50;
+}
+
+@media (max-width: 1199px) {
+  #posts-nav-panel { display: none; }
+}
+
+/* ── Inner wrapper ── */
+.pnp-inner {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ── Header ── */
+.pnp-header {
+  flex-shrink: 0;
+  padding: 1.5rem 1.25rem 0.85rem;
+}
+
+.pnp-label {
+  display: block;
+  font-size: 0.63rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 0.65rem;
+}
+
+.pnp-rule {
+  height: 1px;
+  background: var(--border);
+}
+
+/* ── Scrollable list ── */
+.pnp-list {
+  list-style: none;
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.35rem 0 0.5rem;
+  /* Thin custom scrollbar */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border2) transparent;
+}
+
+.pnp-list::-webkit-scrollbar        { width: 3px; }
+.pnp-list::-webkit-scrollbar-track  { background: transparent; }
+.pnp-list::-webkit-scrollbar-thumb  { background: var(--border2); border-radius: 2px; }
+
+/* ── Each item ── */
+@keyframes pnpSlide {
+  from { opacity: 0; transform: translateX(8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.pnp-item {
+  animation: pnpSlide 240ms ease both;
+}
+
+.pnp-link {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: 0.5rem 1.25rem 0.5rem 1rem;
+  text-decoration: none;
+  color: var(--text);
+  border-left: 2px solid transparent;
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.pnp-link:hover {
+  background: var(--tag-bg);
+  opacity: 1;
+}
+
+.pnp-link--active {
+  border-left-color: var(--accent);
+  background: var(--tag-bg);
+}
+
+/* Dot */
+.pnp-dot {
+  flex-shrink: 0;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--border2);
+  margin-top: 0.42rem;
+  transition: background var(--transition);
+}
+
+.pnp-link:hover .pnp-dot,
+.pnp-link--active .pnp-dot {
+  background: var(--accent);
+}
+
+/* Text */
+.pnp-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.pnp-title {
+  font-size: 0.775rem;
+  line-height: 1.45;
+  color: var(--text);
+  font-weight: 400;
+  /* clamp to 2 lines */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+  transition: color var(--transition);
+}
+
+.pnp-link:hover .pnp-title   { color: var(--accent); }
+.pnp-link--active .pnp-title { color: var(--accent); font-weight: 600; }
+
+.pnp-date {
+  font-size: 0.67rem;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+
+/* ── Footer — load more ── */
+.pnp-footer {
+  flex-shrink: 0;
+  padding: 0.65rem 1.25rem;
+  border-top: 1px solid var(--border);
+}
+
+.pnp-load-more {
+  width: 100%;
+  background: transparent;
+  border: 1px solid var(--border2);
+  border-radius: 20px;
+  padding: 0.3rem 0;
+  font-family: var(--font-sans);
+  font-size: 0.73rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: border-color var(--transition), color var(--transition),
+              background var(--transition);
+}
+
+.pnp-load-more:hover:not(:disabled) {
+  border-color: var(--text);
+  color: var(--text);
+  background: var(--tag-bg);
+}
+
+.pnp-load-more:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ── Empty state ── */
+.pnp-empty {
+  text-align: center;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  padding: 2rem 1rem;
+}
