@@ -28,6 +28,8 @@ let filterVersion = 0;
 let isPrivate = false;
 let isSinglePostView = false;
 let noAiComments = false;
+let videoSummaryEnabled = false;
+
 
 
 /* =============================================
@@ -130,6 +132,21 @@ noAiCheckbox.addEventListener('change', () => {
   noAiComments = noAiCheckbox.checked;
 });
 
+const videoSummaryCheckbox = document.getElementById('video-summary-checkbox');
+const videoSummaryLabel    = document.getElementById('video-summary-label');
+
+videoSummaryCheckbox.addEventListener('change', () => {
+  videoSummaryEnabled = videoSummaryCheckbox.checked;
+  if (videoSummaryEnabled) {
+    noAiComments = true;
+    noAiCheckbox.checked = true;
+    noAiCheckbox.disabled = true;  
+  } else {
+    noAiComments = false;
+    noAiCheckbox.checked = false;
+    noAiCheckbox.disabled = false; 
+  }
+});
 
 /* =============================================
    DRAFT AUTOSAVE
@@ -178,7 +195,29 @@ function clearDraft() {
 quill.on('text-change', () => {
   clearTimeout(draftTimer);
   draftTimer = setTimeout(saveDraft, 5000);
+  updateVideoSummaryToggleVisibility();
 });
+
+function updateVideoSummaryToggleVisibility() {
+  const html = quill.root.innerHTML;
+  const hasYouTube = /youtube\.com\/embed\/([\w-]{11})/.test(html);
+
+  if (hasYouTube) {
+    videoSummaryLabel.classList.remove('hidden');
+    videoSummaryLabel.style.display = 'flex';
+  } else {
+    videoSummaryLabel.classList.add('hidden');
+    videoSummaryLabel.style.display = 'none';
+    if (videoSummaryEnabled) {
+      videoSummaryEnabled = false;
+      videoSummaryCheckbox.checked = false;
+      // ↓ ADD THIS
+      noAiComments = false;
+      noAiCheckbox.checked = false;
+      noAiCheckbox.disabled = false;
+    }
+  }
+}
 
 async function compressImageToBlob(file) {
   const img = new Image();
@@ -518,7 +557,9 @@ publishBtn.addEventListener('click', async () => {
         // await notifySubscribers(postTitle, content);
       }
 
-      if (!insertedPost.no_ai) {
+      if (videoSummaryEnabled) {
+        scheduleVideoSummary(insertedPost.id, content);
+      } else if (!insertedPost.no_ai) {
         scheduleAIComments(insertedPost.id, content);
       }
     }
@@ -531,6 +572,11 @@ publishBtn.addEventListener('click', async () => {
     privateCheckbox.checked = false;
     noAiComments = false;
     noAiCheckbox.checked = false;
+    noAiCheckbox.disabled = false; 
+    videoSummaryEnabled = false;
+    videoSummaryCheckbox.checked = false;
+    videoSummaryLabel.classList.add('hidden');
+    videoSummaryLabel.style.display = 'none';
     await applyFilters();
 
   } catch (err) {
@@ -708,6 +754,132 @@ function scheduleAIComments(postId, postHtml) {
       showRegenerateButton(postId, postHtml);
     }
   }, AI_COMMENT_DELAY_MS);
+}
+
+
+/* =============================================
+   VIDEO SUMMARY
+   ============================================= */
+async function scheduleVideoSummary(postId, postHtml) {
+  const youtubeUrls = extractYouTubeUrlsFromHtml(postHtml);
+  if (!youtubeUrls.length) return;
+
+  showCommentsStatus(postId, 'transcript');
+
+  let transcript = null;
+  try {
+    const res = await fetch(
+      'https://sdltggiedqstrsnvvjmj.supabase.co/functions/v1/get-transcript',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+        body: JSON.stringify({ videoUrl: youtubeUrls[0] }),
+      }
+    );
+    const data = await res.json();
+    transcript = data.transcript || null;
+  } catch (err) {
+    console.warn('[Summary] Transcript fetch failed:', err);
+  }
+
+  if (!transcript) {
+    hideCommentsStatus(postId);
+    showCommentsStatus(postId, 'error');
+    return;
+  }
+
+  showCommentsStatus(postId, 'loading');
+
+  try {
+    const postText = stripHtml(postHtml);
+    const lang = detectLanguage(postText);
+
+    const res = await fetch(
+      'https://sdltggiedqstrsnvvjmj.supabase.co/functions/v1/summarize-video',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+        body: JSON.stringify({ videoUrl: youtubeUrls[0], transcript, language: lang }),
+      }
+    );
+
+    const data = await res.json();
+    if (!data.summary) throw new Error('No summary returned');
+
+    // Save to dedicated column, don't touch post content
+    const { error } = await db.from('posts').update({ summary: data.summary }).eq('id', postId);
+    if (error) throw error;
+
+    hideCommentsStatus(postId);
+
+    // Render as a collapsible section, just like comments
+    const card = document.querySelector(`#posts-feed [data-id="${postId}"]`);
+    if (card) appendSummaryToCard(postId, data.summary);
+
+  } catch (err) {
+    console.error('[Summary] Failed:', err);
+    hideCommentsStatus(postId);
+    showCommentsStatus(postId, 'error');
+  }
+}
+
+function buildSummarySection(summaryText) {
+  const wrapper = document.createElement('div');
+
+  const toggle = document.createElement('button');
+  // Open only in single post view, collapsed in feed
+  toggle.className = isSinglePostView ? 'comments-toggle open' : 'comments-toggle';
+  toggle.innerHTML = `
+    <span class="comments-toggle-label">Video Summary</span>
+    <span class="comments-toggle-arrow">▼</span>
+  `;
+
+  const section = document.createElement('div');
+  // Same logic for the section
+  section.className = isSinglePostView ? 'comments-section open summary-section' : 'comments-section summary-section';
+  section.innerHTML = formatSummaryAsHtml(summaryText);
+
+  toggle.addEventListener('click', () => {
+    const isOpen = section.classList.toggle('open');
+    toggle.classList.toggle('open', isOpen);
+  });
+
+  wrapper.appendChild(toggle);
+  wrapper.appendChild(section);
+  return wrapper;
+}
+
+function appendSummaryToCard(postId, summaryText) {
+  const card = document.querySelector(`#posts-feed [data-id="${postId}"]`);
+  if (!card) return;
+
+  // Remove any existing summary section
+  card.querySelector('.summary-section')?.closest('div')?.remove();
+
+  const section = buildSummarySection(summaryText);
+
+  // Insert before the admin bar (or comments), after the post body
+  const adminBar = card.querySelector('.post-admin-bar');
+  adminBar
+    ? card.insertBefore(section, adminBar)
+    : card.appendChild(section);
+}
+
+function formatSummaryAsHtml(summaryText) {
+  const lines = summaryText.split('\n').filter(l => l.trim());
+  let html = '';
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (/^\*\*(.+)\*\*$/.test(trimmed)) {
+      html += `<div class="video-summary-heading">${trimmed.replace(/^\*\*|\*\*$/g, '')}</div>`;
+    } else if (/^[-•–]/.test(trimmed)) {
+      html += `<div class="video-summary-point">${trimmed.replace(/^[-•–]\s*/, '')}</div>`;
+    } else {
+      html += `<div class="video-summary-tldr">${trimmed}</div>`;
+    }
+  }
+  return html;
 }
 
 
@@ -993,13 +1165,20 @@ async function fetchPosts(offset, limit = PAGE_SIZE) {
     return data || [];
   }
 
-  // Admins: run two queries in parallel and merge
+  let privateQuery = db.from('posts').select('*')
+    .eq('is_private', true)
+    .eq('author', currentUsername)
+    .order('created_at', { ascending: false });
+
+  if (activeTagFilter) privateQuery = privateQuery.contains('tags', [activeTagFilter]);
+  if (searchQuery) {
+    const escaped = searchQuery.replace(/[%_]/g, '\\$&');
+    privateQuery = privateQuery.filter('content', 'ilike', `%${escaped}%`);
+  }
+
   const [publicRes, privateRes] = await Promise.all([
     baseQuery.eq('is_private', false),
-    db.from('posts').select('*')
-      .eq('is_private', true)
-      .eq('author', currentUsername)
-      .order('created_at', { ascending: false })
+    privateQuery
   ]);
 
   if (publicRes.error) throw publicRes.error;
@@ -1108,7 +1287,8 @@ async function loadNextPage(isInitial = false, expectedVersion = null) {
       const card = buildPostCard(post);
       const commentsSection = await buildCommentsSection(post.id);
       if (commentsSection) card.appendChild(commentsSection);
-      postsFeed.appendChild(card);
+      postsFeed.appendChild(card);          
+      if (post.summary) appendSummaryToCard(post.id, post.summary); 
       applyPostTruncation(card);
       if (!commentsSection && !post.no_ai && isAdmin && currentUsername === post.author) {
         showRegenerateButton(post.id, post.content || '');
@@ -1136,6 +1316,7 @@ async function reRenderCurrentPosts() {
   postsFeed.innerHTML = '';
   for (const post of loadedPosts) {
     const card = buildPostCard(post);
+    if (post.summary) appendSummaryToCard(post.id, post.summary);
     const commentsSection = await buildCommentsSection(post.id);
     if (commentsSection) card.appendChild(commentsSection);
     postsFeed.appendChild(card); 
@@ -1971,44 +2152,52 @@ async function renderSinglePost(postId) {
    Supports French and English.
    ============================================= */
 
-function extractTitleFromHtml(html) {
+async function extractTitleFromHtml(html) {
   const div = document.createElement('div');
   div.innerHTML = html;
 
-  // Measure meaningful text (excluding media elements)
   const clone = div.cloneNode(true);
   clone.querySelectorAll('img, iframe, video, figure').forEach(el => el.remove());
   const plainText = clone.textContent.trim();
 
-  // 1. Post has no meaningful text — classify by media type first
   if (plainText.length < 6) {
-    if (div.querySelector('iframe[src*="youtube.com/embed"]')) return 'YouTube video';
+    // Try to get YouTube title via oEmbed
+    const ytIframe = div.querySelector('iframe[src*="youtube.com/embed"]');
+    if (ytIframe) {
+      const match = ytIframe.src.match(/youtube\.com\/embed\/([\w-]{11})/);
+      if (match) {
+        try {
+          const res = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${match[1]}&format=json`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.title) return smartTruncate(data.title);
+          }
+        } catch (_) {}
+      }
+      return 'YouTube video';
+    }
     if (div.querySelector('img')) return 'Image';
     return 'Untitled';
   }
 
-  // 2. Prefer an explicit heading (h1, h2, h3)
   const heading = div.querySelector('h1, h2, h3');
   if (heading) {
     const t = heading.textContent.trim();
     if (t.length >= 6) return cleanTitle(t);
   }
 
-  // 3. Prefer a <strong> or <b> that opens the first paragraph
   const firstStrong = div.querySelector('p strong, p b');
   if (firstStrong) {
     const t = firstStrong.textContent.trim();
     if (t.length >= 6 && t.length <= 120) return cleanTitle(t);
   }
 
-  // 4. First non-empty block of text (media already stripped in clone above)
   const blocks = clone.querySelectorAll('p, li, blockquote');
   for (const block of blocks) {
     const text = block.textContent.trim();
     if (text.length >= 20) return smartTruncate(text);
   }
 
-  // 5. Fallback: full plaintext
   if (plainText.length >= 6) return smartTruncate(plainText);
 
   return 'Untitled';
@@ -2130,8 +2319,8 @@ async function loadMorePanelTitles() {
       return m ? m[1] : null;
     })();
 
-    data.forEach((post, i) => {
-      const title    = extractTitleFromHtml(post.content || '');
+    for (const [i, post] of data.entries()) {
+      const title = await extractTitleFromHtml(post.content || '');
       const href     = `${SITE_BASE}/post/${post.id}`;
       const isActive = post.id === currentPostId;
 
@@ -2157,7 +2346,7 @@ async function loadMorePanelTitles() {
 
       li.appendChild(a);
       list?.appendChild(li);
-    });
+    }
 
     titlePanelOffset += data.length;
     titlePanelHasMore = data.length === TITLE_PAGE_SIZE;
