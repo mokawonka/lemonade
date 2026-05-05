@@ -814,7 +814,7 @@ async function scheduleVideoSummary(postId, postHtml) {
 
     // Render as a collapsible section, just like comments
     const card = document.querySelector(`#posts-feed [data-id="${postId}"]`);
-    if (card) appendSummaryToCard(postId, data.summary);
+    if (card) appendSummaryToCard(postId, data.summary, true);
 
   } catch (err) {
     console.error('[Summary] Failed:', err);
@@ -823,12 +823,12 @@ async function scheduleVideoSummary(postId, postHtml) {
   }
 }
 
-function buildSummarySection(summaryText) {
+function buildSummarySection(summaryText, open = false) {
   const wrapper = document.createElement('div');
 
   const toggle = document.createElement('button');
   // Open only in single post view, collapsed in feed
-  toggle.className = isSinglePostView ? 'comments-toggle open' : 'comments-toggle';
+  toggle.className = open ? 'comments-toggle open' : 'comments-toggle';
   toggle.innerHTML = `
     <span class="comments-toggle-label">Video Summary</span>
     <span class="comments-toggle-arrow">▼</span>
@@ -836,7 +836,7 @@ function buildSummarySection(summaryText) {
 
   const section = document.createElement('div');
   // Same logic for the section
-  section.className = isSinglePostView ? 'comments-section open summary-section' : 'comments-section summary-section';
+  section.className = open ? 'comments-section open summary-section' : 'comments-section summary-section';
   section.innerHTML = formatSummaryAsHtml(summaryText);
 
   toggle.addEventListener('click', () => {
@@ -849,14 +849,14 @@ function buildSummarySection(summaryText) {
   return wrapper;
 }
 
-function appendSummaryToCard(postId, summaryText) {
+function appendSummaryToCard(postId, summaryText, open = false) {
   const card = document.querySelector(`#posts-feed [data-id="${postId}"]`);
   if (!card) return;
 
   // Remove any existing summary section
   card.querySelector('.summary-section')?.closest('div')?.remove();
 
-  const section = buildSummarySection(summaryText);
+  const section = buildSummarySection(summaryText, open);
 
   // Insert before the admin bar (or comments), after the post body
   const adminBar = card.querySelector('.post-admin-bar');
