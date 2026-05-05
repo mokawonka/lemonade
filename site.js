@@ -2112,7 +2112,7 @@ async function renderSinglePost(postId) {
 
     feed.appendChild(card);
     
-    if (post.summary) appendSummaryToCard(post.id, post.summary);
+    if (post.summary) appendSummaryToCard(post.id, post.summary, true);
 
     // Load comments expanded
     const comments = await fetchComments(postId);
