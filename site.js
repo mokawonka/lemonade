@@ -2111,6 +2111,8 @@ async function renderSinglePost(postId) {
     card.querySelector('.post-admin-bar')?.remove();
 
     feed.appendChild(card);
+    
+    if (post.summary) appendSummaryToCard(post.id, post.summary);
 
     // Load comments expanded
     const comments = await fetchComments(postId);
